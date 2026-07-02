@@ -63,6 +63,41 @@ class AlertSettings(BaseSettings):
     ALERT_CRAWLER_RISK_ENABLED: bool = True
 
 
+class QueueSettings(BaseSettings):
+    """异步任务队列相关配置。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    QUEUE_REDIS_HOST: str = "127.0.0.1"
+    QUEUE_REDIS_PORT: int = 6379
+    QUEUE_REDIS_PASSWORD: str = ""
+    QUEUE_REDIS_DB: int = 1
+    QUEUE_PREFIX: str = "openclaw:queue"
+    QUEUE_NAME: str = "default"
+    QUEUE_POOL_SIZE: int = 10
+    QUEUE_POOL_TIMEOUT: float = 30.0          # 连接池等待超时（秒）
+    QUEUE_TASK_TIMEOUT: float = 300.0         # 单个任务执行超时（秒）
+    QUEUE_MAX_RETRIES: int = 3
+    QUEUE_RETRY_BACKOFF: float = 2.0          # 指数退避基数（秒）
+    QUEUE_WORKER_CONCURRENCY: int = 4         # 同时消费的 worker 协程数
+    QUEUE_BPOP_TIMEOUT: float = 5.0           # 单次 bpop 等待时间（秒）
+    QUEUE_TASK_TTL: int = 7 * 24 * 3600       # 任务 meta/payload 过期（秒）
+
+
+class SchedulerSettings(BaseSettings):
+    """定时任务调度相关配置。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
+    SCHEDULER_MAX_CONCURRENT: int = 10
+    SCHEDULER_MISFIRE_GRACE_TIME: int = 60    # 错过多久仍补执行（秒）
+    SCHEDULER_COALESCE: bool = True
+    SCHEDULER_JOBSTORES_REDIS: bool = False   # 用 Redis 持久化 job（可选）
+    SCHEDULER_STORE_PREFIX: str = "openclaw:scheduler"
+
+
 class AppSettings(BaseSettings):
     """全局单例配置对象。"""
 
@@ -75,9 +110,19 @@ class AppSettings(BaseSettings):
     project: ProjectSettings = Field(default_factory=ProjectSettings)
     log: LogSettings = Field(default_factory=LogSettings)
     alert: AlertSettings = Field(default_factory=AlertSettings)
+    queue: QueueSettings = Field(default_factory=QueueSettings)
+    scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
 settings = AppSettings()
 
-__all__ = ["settings", "AppSettings", "ProjectSettings", "LogSettings", "AlertSettings"]
+__all__ = [
+    "settings",
+    "AppSettings",
+    "ProjectSettings",
+    "LogSettings",
+    "AlertSettings",
+    "QueueSettings",
+    "SchedulerSettings",
+]
