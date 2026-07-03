@@ -42,6 +42,8 @@ class ErrorCode(IntEnum):
     DB_UNREACHABLE = 10006           # 数据库连接不可达
     QUEUE_ERROR = 10007              # 队列异常
     SCHEDULER_ERROR = 10008          # 调度异常
+    SPIDER_ERROR = 10009             # 爬虫通用异常
+    SPIDER_RISK = 10010              # 爬虫风控触发
 
     # ===== 基建告警场景 =====
     TASK_FAILURE = 20001
