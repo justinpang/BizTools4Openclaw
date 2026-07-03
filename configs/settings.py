@@ -144,6 +144,7 @@ class AppSettings(BaseSettings):
     spider: "SpiderSettings" = Field(default_factory=lambda: SpiderSettings())
     cleaning: "DataCleanSettings" = Field(default_factory=lambda: DataCleanSettings())
     customer_send: "CustomerSendSettings" = Field(default_factory=lambda: CustomerSendSettings())
+    sales_task: "SalesTaskSettings" = Field(default_factory=lambda: SalesTaskSettings())
 
 
 # =====================
@@ -287,6 +288,51 @@ class CustomerSendSettings(BaseSettings):
     CUSTOMER_SEND_SMTP_PASSWORD: str = ""
     CUSTOMER_SEND_SMTP_USE_SSL: bool = True
     CUSTOMER_SEND_SMTP_FROM: str = ""
+
+    def split_csv(self, value: str) -> list[str]:
+        if not value:
+            return []
+        return [x.strip() for x in str(value).split(",") if x.strip()]
+
+
+# =====================
+# T12 销售商机调度配置
+# =====================
+
+
+class SalesTaskSettings(BaseSettings):
+    """销售商机调度/分配/提醒配置（全部从 .env 读取，零硬编码）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    # 分配权重
+    SALES_TASK_ASSIGN_INDUSTRY_WEIGHT: float = 3.0
+    SALES_TASK_ASSIGN_REGION_WEIGHT: float = 2.0
+    SALES_TASK_ASSIGN_SCORE_WEIGHT: float = 1.0
+    SALES_TASK_ASSIGN_MIN_SCORE_THRESHOLD: int = 20
+
+    # 批量告警阈值
+    SALES_TASK_BATCH_UNASSIGNED_ALERT_RATIO: float = 0.2
+    SALES_TASK_OVERDUE_ALERT_THRESHOLD: int = 10
+    SALES_TASK_LONG_UNASSIGNED_THRESHOLD_DAYS: int = 7
+
+    # 多级提醒周期（天）
+    SALES_TASK_REMIND_CYCLE_DAYS_NOTIFY: int = 0
+    SALES_TASK_REMIND_CYCLE_DAYS_FIRST: int = 3
+    SALES_TASK_REMIND_CYCLE_DAYS_SECOND: int = 7
+    SALES_TASK_REMIND_CYCLE_DAYS_OVERDUE: int = 15
+
+    # 推送渠道开关（复用 T11）
+    SALES_TASK_PUSH_FEISHU_ENABLED: bool = True
+    SALES_TASK_PUSH_WECHAT_ENABLED: bool = True
+    SALES_TASK_PUSH_EMAIL_ENABLED: bool = False
+
+    # 漏斗统计
+    SALES_TASK_FUNNEL_PERIOD_DAYS: int = 7
+    SALES_TASK_FUNNEL_AUTO_REFRESH: bool = True
+
+    # 日志
+    SALES_TASK_LOG_LEVEL: str = "INFO"
 
     def split_csv(self, value: str) -> list[str]:
         if not value:
