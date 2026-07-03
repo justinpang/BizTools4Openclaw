@@ -146,6 +146,7 @@ class AppSettings(BaseSettings):
     customer_send: "CustomerSendSettings" = Field(default_factory=lambda: CustomerSendSettings())
     sales_task: "SalesTaskSettings" = Field(default_factory=lambda: SalesTaskSettings())
     adapter: "AdapterSettings" = Field(default_factory=lambda: AdapterSettings())
+    web_admin: "WebAdminSettings" = Field(default_factory=lambda: WebAdminSettings())
 
 
 # =====================
@@ -381,6 +382,27 @@ class AdapterSettings(BaseSettings):
 
     def get_ips(self) -> list[str]:
         return [ip.strip() for ip in str(self.ADAPTER_IP_WHITELIST).split(",") if ip.strip()]
+
+
+# =====================
+# T14 Web 管理后台配置
+# =====================
+
+
+class WebAdminSettings(BaseSettings):
+    """Web 管理后台配置（全部从 .env 读取，不硬编码账号密码）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    WEB_ADMIN_ENABLED: bool = True
+    WEB_ADMIN_PATH_PREFIX: str = "/admin"
+
+    # 管理员账号（密码通过 bcrypt 哈希存储）
+    WEB_ADMIN_USERNAME: str = "admin"
+    WEB_ADMIN_PASSWORD_HASH: str = ""
+    WEB_ADMIN_PASSWORD_PLAIN: str = ""
+    WEB_ADMIN_SESSION_TTL_SECONDS: int = 60 * 60 * 8   # 会话 8 小时
+    WEB_ADMIN_PAGE_SIZE: int = 20                      # 页面默认分页条数
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`

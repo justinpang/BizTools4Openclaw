@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>操作日志 · BizTools4Openclaw</title>
+<link rel="stylesheet" href="/admin/static/css/admin.css"/>
+</head>
+<body class="page page-audit">
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="content">
+      <header class="topbar">
+        <h2>📜 操作日志</h2>
+        <div class="user-area"><span id="user-name">admin</span>
+          <form method="POST" action="/admin/logout" style="display:inline;margin-left:12px;">
+            <button type="submit" class="btn btn-sm">登出</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="row">
+          <label>近 <input type="number" id="limit" value="50" min="10" max="500"/> 条
+          </label>
+          <button class="btn btn-primary" onclick="admin.loadAuditLogs()">刷新</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>时间</th><th>用户</th><th>IP</th><th>路径</th><th>状态</th><th>耗时 ms</th></tr></thead>
+          <tbody id="audit-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+<script src="/admin/static/js/admin.js"></script>
+<script>window.__PAGE__ = "audit_log";</script>
+</body>
+</html>

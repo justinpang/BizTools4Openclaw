@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>销售管理 · BizTools4Openclaw</title>
+<link rel="stylesheet" href="/admin/static/css/admin.css"/>
+</head>
+<body class="page page-sales">
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="content">
+      <header class="topbar">
+        <h2>👥 销售管理</h2>
+        <div class="user-area"><span id="user-name">admin</span>
+          <form method="POST" action="/admin/logout" style="display:inline;margin-left:12px;">
+            <button type="submit" class="btn btn-sm">登出</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h3>🧑‍💼 销售人员</h3>
+        <form class="row-form" onsubmit="return admin.upsertPerson(event)">
+          <label>销售 ID
+            <input type="text" name="sales_id" placeholder="s_001"/>
+          </label>
+          <label>姓名
+            <input type="text" name="name" placeholder="张三"/>
+          </label>
+          <label>行业（逗号分隔）
+            <input type="text" name="industries" placeholder="制造业,电商"/>
+          </label>
+          <label>权重
+            <input type="number" step="0.1" name="weight" value="1.0"/>
+          </label>
+          <label>手机（仅存储，不回显明文）
+            <input type="text" name="phone" placeholder="138 0000 0000"/>
+          </label>
+          <label>邮箱
+            <input type="text" name="email" placeholder="a@b.com"/>
+          </label>
+          <button class="btn btn-primary" type="submit">保存</button>
+        </form>
+
+        <table class="data-table">
+          <thead><tr><th>ID</th><th>姓名</th><th>行业</th><th>权重</th><th>手机</th><th>邮箱</th></tr></thead>
+          <tbody id="persons-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>🎯 商机分配</h3>
+        <form class="row-form" onsubmit="return admin.doAssign(event)">
+          <label>商机 ID
+            <input type="text" name="opportunity_id" placeholder="opp_001"/>
+          </label>
+          <label>客户
+            <input type="text" name="customer" placeholder="某某公司"/>
+          </label>
+          <label>销售
+            <input type="text" name="sales_id" placeholder="留空=自动分配"/>
+          </label>
+          <button class="btn btn-primary" type="submit">分配</button>
+        </form>
+        <table class="data-table">
+          <thead><tr><th>分配 ID</th><th>商机</th><th>销售</th><th>状态</th><th>时间</th></tr></thead>
+          <tbody id="assignments-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>📞 跟进记录</h3>
+        <form class="row-form" onsubmit="return admin.recordFollowup(event)">
+          <label>商机 ID
+            <input type="text" name="opportunity_id"/>
+          </label>
+          <label>渠道
+            <select name="channel">
+              <option>phone</option><option>email</option><option>meeting</option><option>wechat</option>
+            </select>
+          </label>
+          <label>内容
+            <input type="text" name="content" placeholder="通话内容简要"/>
+          </label>
+          <label>销售 ID
+            <input type="text" name="sales_id" placeholder="留空=当前登录用户"/>
+          </label>
+          <button class="btn btn-primary" type="submit">记录</button>
+        </form>
+        <table class="data-table">
+          <thead><tr><th>ID</th><th>商机</th><th>渠道</th><th>内容</th><th>操作人</th><th>时间</th></tr></thead>
+          <tbody id="followups-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>⏰ 逾期跟进</h3>
+        <table class="data-table">
+          <thead><tr><th>商机</th><th>销售</th><th>上次跟进</th><th>提示</th></tr></thead>
+          <tbody id="overdue-body"></tbody>
+        </table>
+        <button class="btn btn-sm" onclick="admin.loadOverdue()">刷新</button>
+      </section>
+    </main>
+  </div>
+
+<script src="/admin/static/js/admin.js"></script>
+<script>window.__PAGE__ = "sales";</script>
+</body>
+</html>

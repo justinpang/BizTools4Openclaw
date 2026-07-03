@@ -104,4 +104,13 @@ if __name__ == "__main__":
     run_server()
 
 
+# ---- Web 管理后台（可选，默认启用） ----
+try:
+    if settings.web_admin.WEB_ADMIN_ENABLED:
+        from web_admin.main import mount_on as mount_web_admin
+        mount_web_admin(app)
+except Exception as exc:
+    logger.info(f"web_admin mount skipped: {exc}")
+
+
 __all__ = ["app", "run_server"]

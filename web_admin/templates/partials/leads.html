@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>商机线索 · BizTools4Openclaw</title>
+<link rel="stylesheet" href="/admin/static/css/admin.css"/>
+</head>
+<body class="page page-leads">
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="content">
+      <header class="topbar">
+        <h2>💼 商机线索管理</h2>
+        <div class="user-area"><span id="user-name">admin</span>
+          <form method="POST" action="/admin/logout" style="display:inline;margin-left:12px;">
+            <button type="submit" class="btn btn-sm">登出</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h3>🔎 筛选</h3>
+        <div class="row">
+          <input type="text" id="keyword" placeholder="关键词（标题/客户）"/>
+          <select id="status">
+            <option value="">全部状态</option>
+            <option value="PENDING">待复核</option>
+            <option value="APPROVED">已通过</option>
+            <option value="REJECTED">已拒绝</option>
+          </select>
+          <button class="btn btn-primary" onclick="admin.loadLeads()">查询</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>📋 线索列表</h3>
+        <table class="data-table">
+          <thead><tr><th>ID</th><th>标题</th><th>客户</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="leads-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>🛑 手动添加黑名单</h3>
+        <form class="row-form" onsubmit="return admin.addBlacklist(event)">
+          <label>类型
+            <select name="type">
+              <option value="phone">手机号</option>
+              <option value="email">邮箱</option>
+              <option value="company_name">公司名</option>
+              <option value="domain">域名</option>
+            </select>
+          </label>
+          <label>标识
+            <input type="text" name="identifier" placeholder="如 138****0000"/>
+          </label>
+          <label>原因
+            <input type="text" name="reason" placeholder="如 无效商机"/>
+          </label>
+          <button class="btn btn-danger" type="submit">加入黑名单</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h3>📚 当前黑名单</h3>
+        <div id="blacklist-body" class="code-out">(点击加载)</div>
+        <button class="btn btn-sm" onclick="admin.loadBlacklist()">加载</button>
+      </section>
+    </main>
+  </div>
+
+<script src="/admin/static/js/admin.js"></script>
+<script>window.__PAGE__ = "leads";</script>
+</body>
+</html>

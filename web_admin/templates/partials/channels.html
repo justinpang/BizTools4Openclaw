@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>渠道账号 · BizTools4Openclaw</title>
+<link rel="stylesheet" href="/admin/static/css/admin.css"/>
+</head>
+<body class="page page-channels">
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="content">
+      <header class="topbar">
+        <h2>📡 渠道账号管理</h2>
+        <div class="user-area"><span id="user-name">admin</span>
+          <form method="POST" action="/admin/logout" style="display:inline;margin-left:12px;">
+            <button type="submit" class="btn btn-sm">登出</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h3>➕ 新增账号</h3>
+        <form class="row-form" onsubmit="return admin.createAccount(event)">
+          <label>渠道
+            <select name="channel">
+              <option value="email">Email</option>
+              <option value="wechat">企业微信</option>
+              <option value="feishu">飞书</option>
+              <option value="dingtalk">钉钉</option>
+            </select>
+          </label>
+          <label>账号 ID
+            <input type="text" name="account_id" placeholder="biztools_sender_01"/>
+          </label>
+          <label>用户名
+            <input type="text" name="username" placeholder="显示名称"/>
+          </label>
+          <label>密码（加密存储，不回显明文）
+            <input type="password" name="password" required/>
+          </label>
+          <label>每日发送额度
+            <input type="number" name="quota" value="500" min="1"/>
+          </label>
+          <button class="btn btn-primary" type="submit">保存</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h3>📋 渠道账号（密码永远以 ******** 显示）</h3>
+        <div id="channels-wrap"></div>
+      </section>
+    </main>
+  </div>
+
+<script src="/admin/static/js/admin.js"></script>
+<script>window.__PAGE__ = "channels";</script>
+</body>
+</html>

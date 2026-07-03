@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>爬虫任务 · BizTools4Openclaw</title>
+<link rel="stylesheet" href="/admin/static/css/admin.css"/>
+</head>
+<body class="page page-spider">
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="content">
+      <header class="topbar">
+        <h2>🕷 爬虫任务管理</h2>
+        <div class="user-area"><span id="user-name">admin</span>
+          <form method="POST" action="/admin/logout" style="display:inline;margin-left:12px;">
+            <button type="submit" class="btn btn-sm">登出</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h3>➕ 新增 / 编辑任务</h3>
+        <form class="row-form" onsubmit="return admin.createSpiderTask(event)">
+          <label>任务 ID
+            <input type="text" name="job_id" placeholder="例如 spider_hourly_biz"/>
+          </label>
+          <label>爬虫名称
+            <select id="spider-name-select" name="spider_name"></select>
+          </label>
+          <label>Cron 表达式
+            <input type="text" name="cron" value="*/30 * * * *"/>
+          </label>
+          <label>关键词（逗号分隔）
+            <input type="text" name="keywords" value="商机,采购,ERP"/>
+          </label>
+          <label>最大页数
+            <input type="number" name="max_pages" value="20" min="1"/>
+          </label>
+          <button class="btn btn-primary" type="submit">保存任务</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h3>📋 已登记任务</h3>
+        <table class="data-table">
+          <thead><tr>
+            <th>任务 ID</th><th>爬虫</th><th>Cron</th><th>关键词</th>
+            <th>状态</th><th>下次运行</th><th>操作</th>
+          </tr></thead>
+          <tbody id="tasks-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h3>📖 抓取日志</h3>
+        <div class="row">
+          <input type="text" id="log-job-id" placeholder="输入 task/job id"/>
+          <button class="btn" onclick="admin.loadSpiderLogs()">查看</button>
+        </div>
+        <pre id="logs-out" class="code-out">(空)</pre>
+      </section>
+
+      <section class="panel">
+        <h3>⚠️ 风控异常记录</h3>
+        <div id="risks-out" class="code-out">(点击刷新查看)</div>
+        <button class="btn btn-sm" onclick="admin.loadRisks()">刷新</button>
+      </section>
+    </main>
+  </div>
+
+<script src="/admin/static/js/admin.js"></script>
+<script>window.__PAGE__ = "spider";</script>
+</body>
+</html>
