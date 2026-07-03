@@ -92,10 +92,38 @@ class SchedulerSettings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     SCHEDULER_MAX_CONCURRENT: int = 10
-    SCHEDULER_MISFIRE_GRACE_TIME: int = 60    # 错过多久仍补执行（秒）
+    SCHEDULER_MISFIRE_GRACE_TIME: int = 60
     SCHEDULER_COALESCE: bool = True
-    SCHEDULER_JOBSTORES_REDIS: bool = False   # 用 Redis 持久化 job（可选）
+    SCHEDULER_JOBSTORES_REDIS: bool = False
     SCHEDULER_STORE_PREFIX: str = "openclaw:scheduler"
+
+
+class DBSettings(BaseSettings):
+    """数据库 / ORM / 加密 / 冷热分离配置。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    DB_HOST: str = "127.0.0.1"
+    DB_PORT: int = 5432
+    DB_USER: str = "postgres"
+    DB_PASSWORD: str = ""
+    DB_NAME: str = "openclaw_biz"
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+
+    DB_ENCRYPTION_KEY: str = ""
+    DB_ARCHIVE_DAYS: int = 90
+    DB_ARCHIVE_HOT_THRESHOLD: float = 1000.0
+    DB_SENSITIVE_MASK_ENABLED: bool = True
+    DB_TABLE_PREFIX: str = ""
+
+    def masked_repr(self) -> dict:
+        """打印配置时替换敏感字段为 ***。"""
+        data = self.model_dump()
+        for key in ("DB_PASSWORD", "DB_ENCRYPTION_KEY"):
+            if key in data:
+                data[key] = "***"
+        return data
 
 
 class AppSettings(BaseSettings):
@@ -112,6 +140,7 @@ class AppSettings(BaseSettings):
     alert: AlertSettings = Field(default_factory=AlertSettings)
     queue: QueueSettings = Field(default_factory=QueueSettings)
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
+    db: DBSettings = Field(default_factory=DBSettings)
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
@@ -125,4 +154,5 @@ __all__ = [
     "AlertSettings",
     "QueueSettings",
     "SchedulerSettings",
+    "DBSettings",
 ]

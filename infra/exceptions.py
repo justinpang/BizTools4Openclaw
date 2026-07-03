@@ -38,6 +38,10 @@ class ErrorCode(IntEnum):
     BIZ_PARAM_ERROR = 10002
     BIZ_NOT_FOUND = 10003
     BIZ_CONFLICT = 10004
+    DB_ERROR = 10005                 # 数据库异常
+    DB_UNREACHABLE = 10006           # 数据库连接不可达
+    QUEUE_ERROR = 10007              # 队列异常
+    SCHEDULER_ERROR = 10008          # 调度异常
 
     # ===== 基建告警场景 =====
     TASK_FAILURE = 20001
