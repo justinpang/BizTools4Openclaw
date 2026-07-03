@@ -1,0 +1,218 @@
+# =========================================
+# OpenClaw Skill 配置示例 · BizTools4Openclaw T13
+# 复制到 OpenClaw 配置目录即可作为 Agent 插件使用
+# =========================================
+openclaw_skill_gateway:
+  name: biztools4openclaw
+  version: T13-v1.0
+  description: >-
+    企业商机线索获取 / 清洗 / 触达 / 销售任务管理统一网关。
+    所有出口数据自动完成 T06 隐私脱敏，联系方式与客户姓名以 *** 呈现。
+  base_url: http://localhost:8000
+  api_auth_type: bearer
+  api_token_env: OPENCLAW_BIZTOOLS_TOKEN
+  headers:
+    X-Agent-Id: openclaw-sales-agent
+    Content-Type: application/json
+
+# =========================================
+# 工具列表（可直接导入 OpenClaw Skill Manager）
+# =========================================
+tools:
+  # --- 爬虫 ---
+  - tool_name: spider_list
+    tool_type: spider
+    description: 列出当前系统所有已注册爬虫名称与能力描述
+    method: POST
+    endpoint: /api/v1/tools/spider_list/execute
+    input: {}
+    output:
+      spiders: list[{name: string, description: string}]
+
+  - tool_name: spider_run
+    tool_type: spider
+    description: 根据爬虫名称与关键词执行公域商机采集
+    method: POST
+    endpoint: /api/v1/tools/spider_run/execute
+    input:
+      spider_name: string         # 例如 generic_web / bid_and_gov
+      keywords: [string]
+      max_pages: integer          # 可选
+    output:
+      task_id: string
+      status: string              # PENDING / RUNNING / SUCCESS / FAILED
+
+  # --- 清洗 ---
+  - tool_name: clean_run
+    tool_type: data_clean
+    description: 对采集的商机做去重 / 评分 / 合规过滤
+    method: POST
+    endpoint: /api/v1/tools/clean_run/execute
+    input:
+      tenant_id: string
+      source_batch_id: string
+      items: [object]
+    output:
+      task_id: string
+
+  # --- 触达 ---
+  - tool_name: send_batch
+    tool_type: customer_send
+    description: 同步批量商机触达（邮件 / 企微 / 飞书）
+    method: POST
+    endpoint: /api/v1/tools/send_batch/execute
+    input:
+      task_id: string
+      targets: [object]
+      channels: [string]          # email / wechat / feishu / dingtalk
+    output:
+      success: integer
+      failed: integer
+
+  - tool_name: send_async
+    tool_type: customer_send
+    description: 入队异步批量商机触达，立即返回 task_id
+    method: POST
+    endpoint: /api/v1/tools/send_async/execute
+    input:
+      task_id: string
+      targets: [object]
+      channels: [string]
+    output:
+      task_id: string
+
+  # --- 销售 ---
+  - tool_name: sales_assign
+    tool_type: sales_task
+    description: 按行业 / 地域 / 权重将商机分配给销售
+    method: POST
+    endpoint: /api/v1/tools/sales_assign/execute
+    input:
+      opportunities: [object]
+      salespersons: [object]
+    output:
+      assignments: [object]
+
+  - tool_name: sales_remind
+    tool_type: sales_task
+    description: 扫描待跟进商机，触发多级推送
+    method: POST
+    endpoint: /api/v1/tools/sales_remind/execute
+    input:
+      opportunities: [object]
+      salespersons: [object]
+    output:
+      reminders: [object]
+
+  - tool_name: sales_transition
+    tool_type: sales_task
+    description: 将商机从当前状态流转到目标状态
+    method: POST
+    endpoint: /api/v1/tools/sales_transition/execute
+    input:
+      opportunity: object
+      target_status: string       # FOLLOWING / CLOSED_WON / CLOSED_LOST
+      operator_sales_id: string
+      detail: string
+    output:
+      new_status: string
+
+  - tool_name: sales_add_tag
+    tool_type: sales_task
+    description: 给商机打标签
+    method: POST
+    endpoint: /api/v1/tools/sales_add_tag/execute
+    input:
+      opportunity: object
+      tag: string
+      operator_sales_id: string
+    output:
+      tags: [string]
+
+  - tool_name: sales_remove_tag
+    tool_type: sales_task
+    description: 从商机上移除指定标签
+    method: POST
+    endpoint: /api/v1/tools/sales_remove_tag/execute
+    input:
+      opportunity: object
+      tag: string
+      operator_sales_id: string
+    output:
+      tags: [string]
+
+  - tool_name: sales_record_follow
+    tool_type: sales_task
+    description: 记录销售电话 / 邮件 / 会议跟进内容
+    method: POST
+    endpoint: /api/v1/tools/sales_record_follow/execute
+    input:
+      opportunity: object
+      sales_id: string
+      channel: string              # phone / email / meeting
+      content: string
+    output:
+      follow_up_id: string
+
+  - tool_name: sales_funnel_stats
+    tool_type: sales_task
+    description: 输出采集 / 清洗 / 触达 / 跟进 / 成交各环节转化率
+    method: POST
+    endpoint: /api/v1/tools/sales_funnel_stats/execute
+    input:
+      tenant_id: string
+      period_days: integer
+    output:
+      stages: [object]
+
+# =========================================
+# 任务管理（Agent 可以自行查询 / 取消 / 触发 Webhook）
+# =========================================
+task_management:
+  endpoints:
+    enqueue:        POST   /api/v1/tasks/enqueue
+    get_status:     GET    /api/v1/tasks/{task_id}
+    list_recent:    GET    /api/v1/tasks?limit=100
+    cancel:         DELETE /api/v1/tasks/{task_id}
+    manual_webhook: POST   /api/v1/tasks/{task_id}/webhook
+  webhook_payload:
+    task_id: string
+    tool_name: string
+    status: string
+    result_masked: object
+    error: string | null
+    trace_id: string
+    agent_id: string
+    timestamp: integer
+
+# =========================================
+# 最小可运行调用 Demo（curl）
+# =========================================
+examples:
+  - name: 工具列表
+    curl: |
+      curl -s -X GET "http://localhost:8000/api/v1/tools" \
+        -H "Authorization: Bearer test-token-12345" \
+        -H "X-Agent-Id: openclaw-demo"
+
+  - name: 同步执行爬虫
+    curl: |
+      curl -s -X POST "http://localhost:8000/api/v1/tools/spider_run/execute" \
+        -H "Authorization: Bearer test-token-12345" \
+        -H "X-Agent-Id: openclaw-demo" \
+        -H "Content-Type: application/json" \
+        -d '{"params":{"spider_name":"generic_web","keywords":["ERP","采购"]},"async_mode":false}'
+
+  - name: 异步入队 + 查询
+    curl: |
+      curl -s -X POST "http://localhost:8000/api/v1/tools/sales_assign/execute" \
+        -H "Authorization: Bearer test-token-12345" \
+        -H "Content-Type: application/json" \
+        -d '{"params":{"opportunities":[],"salespersons":[]},"async_mode":true,"webhook_url":"https://your.host/hook"}'
+      # 响应里拿到 task_id，查询：
+      curl -s -X GET "http://localhost:8000/api/v1/tasks/<task_id>" \
+        -H "Authorization: Bearer test-token-12345"
+
+  - name: 健康检查
+    curl: |
+      curl -s "http://localhost:8000/health"

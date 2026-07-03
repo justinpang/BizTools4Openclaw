@@ -145,6 +145,7 @@ class AppSettings(BaseSettings):
     cleaning: "DataCleanSettings" = Field(default_factory=lambda: DataCleanSettings())
     customer_send: "CustomerSendSettings" = Field(default_factory=lambda: CustomerSendSettings())
     sales_task: "SalesTaskSettings" = Field(default_factory=lambda: SalesTaskSettings())
+    adapter: "AdapterSettings" = Field(default_factory=lambda: AdapterSettings())
 
 
 # =====================
@@ -338,6 +339,48 @@ class SalesTaskSettings(BaseSettings):
         if not value:
             return []
         return [x.strip() for x in str(value).split(",") if x.strip()]
+
+
+# =====================
+# T13 OpenClaw 适配网关配置
+# =====================
+
+
+class AdapterSettings(BaseSettings):
+    """OpenClaw 适配网关（全部从 .env 读取，零硬编码）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    # 网关基本信息
+    ADAPTER_HOST: str = "0.0.0.0"
+    ADAPTER_PORT: int = 8000
+    ADAPTER_BASE_URL: str = "http://localhost:8000"
+    ADAPTER_VERSION: str = "T13-v1.0"
+
+    # Bearer Token（多 Agent 共享，逗号分隔）
+    ADAPTER_API_TOKENS: str = "test-token-12345"
+
+    # 单 Agent 每日调用上限（0 = 不限制）
+    ADAPTER_DAILY_QUOTA_PER_AGENT: int = 1000
+
+    # IP 白名单（空字符串表示不启用）
+    ADAPTER_IP_WHITELIST: str = ""
+
+    # Webhook 回调
+    ADAPTER_DEFAULT_WEBHOOK_URL: str = ""
+    ADAPTER_WEBHOOK_TIMEOUT: float = 10.0
+
+    # T06 隐私脱敏（所有出口数据都强制脱敏）
+    ADAPTER_AUTO_MASK_PII: bool = True
+
+    # 日志
+    ADAPTER_LOG_LEVEL: str = "INFO"
+
+    def get_tokens(self) -> list[str]:
+        return [t.strip() for t in str(self.ADAPTER_API_TOKENS).split(",") if t.strip()]
+
+    def get_ips(self) -> list[str]:
+        return [ip.strip() for ip in str(self.ADAPTER_IP_WHITELIST).split(",") if ip.strip()]
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
