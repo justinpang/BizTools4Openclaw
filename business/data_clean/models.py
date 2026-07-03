@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -106,7 +106,7 @@ class SourceMeta(BaseModel):
 
 class PipelineMeta(BaseModel):
     version: str
-    processed_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    processed_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
     trace_steps: list[str] = Field(default_factory=list)
 
 
@@ -140,7 +140,7 @@ class AnomalyRecord(BaseModel):
     reason: str = ""
     raw_snippet: str = ""
     pipeline_version: str = ""
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
     needs_review: bool = True
     reviewed_at: str | None = None
     reviewed_by: str | None = None
@@ -163,7 +163,7 @@ class CleanRunResult(BaseModel):
     blocked: int = 0
     engine_total: int = 0
     next_cursor: str | None = None
-    started_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
     finished_at: str | None = None
     duration_ms: int | None = None
     first_error: str | None = None

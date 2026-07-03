@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ class ApiResponse(BaseModel):
     data: Any = Field(default=None)
     trace_id: str | None = None
     task_id: str | None = None
-    timestamp: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp()))
+    timestamp: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
 
 
 class ToolDefinition(BaseModel):
@@ -60,7 +60,7 @@ class WebhookPayload(BaseModel):
     error: str | None = None
     trace_id: str | None = None
     agent_id: str | None = None
-    timestamp: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp()))
+    timestamp: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp()))
 
 
 __all__ = [

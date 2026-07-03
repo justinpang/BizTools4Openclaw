@@ -112,10 +112,10 @@ def create_session(username: str, *, client_ip: str) -> str:
     try:
         r = get_redis()
         if r is not None:
-            r.setex(
+            r.set(
                 REDIS_PREFIX + token,
-                int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
-                json.dumps(session, ensure_ascii=False),
+                value=json.dumps(session, ensure_ascii=False),
+                ex=int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
             )
     except Exception as exc:
         logger.info(f"redis session create fallback: {exc}")
@@ -158,10 +158,10 @@ def refresh_session_ttl(token: str, session: dict) -> None:
         session["last_seen"] = int(time.time())
         r = get_redis()
         if r is not None:
-            r.setex(
+            r.set(
                 REDIS_PREFIX + token,
-                int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
-                json.dumps(session, ensure_ascii=False),
+                value=json.dumps(session, ensure_ascii=False),
+                ex=int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
             )
     except Exception:
         # 降级：进程内重写

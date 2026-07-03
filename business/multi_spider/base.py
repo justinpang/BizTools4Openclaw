@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from infra.logger_setup import get_logger
@@ -144,7 +144,7 @@ class BaseSpider:
 
         # 3) 合规 + 持久化
         rows: list[dict[str, Any]] = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for item in items:
             row = self._build_row(item, params, now, result)
             rows.append(row)
@@ -169,7 +169,7 @@ class BaseSpider:
         else:
             result.status = "failed"
 
-        result.finished_at = datetime.utcnow()
+        result.finished_at = datetime.now(timezone.utc)
         result.duration_ms = int((time.monotonic() - started) * 1000)
         return result
 

@@ -78,8 +78,8 @@ def build_variables(target: Any, *, h5_url: str | None = None) -> dict[str, str]
 
 def _today() -> str:
     try:
-        from datetime import datetime
-        return datetime.utcnow().strftime("%Y-%m-%d")
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
     except Exception:
         return ""
 

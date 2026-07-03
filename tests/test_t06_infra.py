@@ -330,7 +330,8 @@ def test_lifecycle_clear_file(lifecycle: DataLifecycle, tmp_path) -> None:
     result = lifecycle.clear_file(str(src), output_path=out_path)
     assert result["total_lines"] == 2
     assert result["modified_lines"] >= 1
-    content = open(out_path, encoding="utf-8").read()
+    with open(out_path, encoding="utf-8") as f:
+        content = f.read()
     assert "13800138000" not in content
     assert "138****8000" in content or "*" in content
 

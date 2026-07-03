@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, SmallInteger, String, Text, Index
@@ -46,8 +46,8 @@ class StructuredOpportunityRow(_Base):
     pipeline_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     pipeline_processed_at: Mapped[str] = mapped_column(String(64), nullable=True)
     pipeline_trace: Mapped[str] = mapped_column(String(512), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_struct_opp_unique", "tenant_id", "opportunity_id", unique=True),
@@ -78,8 +78,7 @@ class AnomalyPoolRow(_Base):
     reviewed_at: Mapped[str] = mapped_column(String(64), nullable=True)
     reviewed_by: Mapped[str] = mapped_column(String(128), nullable=True)
     review_note: Mapped[str] = mapped_column(String(512), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     __table_args__ = (
         Index("ix_anomaly_unique", "tenant_id", "anomaly_id", unique=True),
     )

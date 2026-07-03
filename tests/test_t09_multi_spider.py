@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -121,7 +121,12 @@ def _inject_spider_sdk(monkeypatch, sdk: _FakeSDK) -> None:
 
 
 def _inject_memory_db(monkeypatch) -> dict[str, Any]:
-    """将 infra.db_base.database 替换为 SQLite 内存实例。"""
+    """将 infra.db_base.database 替换为 SQLite 内存实例。
+
+    返回的 store 中含真实的 sqlite3.Connection；调用方（通常是 fixture 级别）
+    负责在 teardown 时通过 ``store["conn"].close()`` 释放，避免 unclosed
+    database 的 ResourceWarning。
+    """
     import sqlite3
     import threading
 
@@ -153,6 +158,18 @@ def _inject_memory_db(monkeypatch) -> dict[str, Any]:
     lock = threading.Lock()
     store: dict[str, Any] = {"conn": conn, "rows": [], "lock": lock}
 
+    # -------- 连接清理：注册到 conftest 全局注册表 --------
+    # tests/conftest.py 提供 _register_test_sqlite_conn(conn) 全局函数，
+    # 它会在每次测试结束时（autouse fixture teardown）关闭所有注册的
+    # sqlite3 内存连接，从而避免 unclosed database 的 ResourceWarning。
+    try:
+        from tests.conftest import _register_test_sqlite_conn
+        _register_test_sqlite_conn(conn)
+    except Exception:
+        # 兜底：进程结束时关闭
+        import atexit as _atexit
+        _atexit.register(lambda: (conn.close() if conn else None))
+
     # 替换 database.bulk_insert
     from infra.db_base import database
     original_bulk = database.bulk_insert
@@ -178,8 +195,9 @@ def _inject_memory_db(monkeypatch) -> dict[str, Any]:
                             r.get("raw_text"),
                             r.get("fetch_status", 0),
                             r.get("fetch_error"),
-                            r.get("captured_at") or datetime.utcnow().isoformat(),
+                            r.get("captured_at") or datetime.now(timezone.utc).isoformat(),
                             r.get("source_country"),
+                            "default",
                         ),
                     )
                     inserted += 1
@@ -221,7 +239,7 @@ def _inject_memory_db(monkeypatch) -> dict[str, Any]:
                             r.get("raw_text"),
                             r.get("fetch_status", 0),
                             r.get("fetch_error"),
-                            r.get("captured_at") or datetime.utcnow().isoformat(),
+                            r.get("captured_at") or datetime.now(timezone.utc).isoformat(),
                             r.get("source_country"),
                         ),
                     )

@@ -1,0 +1,21 @@
+[tool.pytest.ini_options]
+# 统一的 pytest 配置：
+#   - testpaths: 限定搜索测试的目录，避免 pytest 意外扫描其他路径
+#   - filterwarnings:
+#       * error: 让所有 warning 默认都升级为 error（强制开发者在 CI 中修复）
+#       * ignore: 明确列出那些来自第三方库（而非我们代码）的已知弃用警告
+minversion = "8.0"
+testpaths = ["tests"]
+filterwarnings = [
+    # ------- 来自 fastapi / starlette / httpx 的上游弃用警告 -------
+    # starlette.testclient 在 Python 3.13+ 建议使用 httpx2，
+    # 不是本仓库的问题，也不在本仓库修复范围。
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+    # ------- 来自 pytest-asyncio 的 fixture 默认作用域提醒 -------
+    # pytest-asyncio 1.x 引入的提醒，应在 pytest-asyncio 项目中处理。
+    "ignore:.*asyncio_default_fixture_loop_scope.*:pytest.PytestDeprecationWarning",
+    # ------- 数据库驱动的弃用提醒（sqlite3 默认 datetime adapter）----
+    # Python 3.12+ 起的内置弃用；我们在 tests/conftest.py 注册了自定义 adapter，
+    # 但仍有直接使用 sqlite3 的第三方代码会触发。
+    "ignore:The default datetime adapter is deprecated as of Python 3.12",
+]

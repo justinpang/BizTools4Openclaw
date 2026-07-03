@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
@@ -70,8 +70,8 @@ class BatchSendResult(BaseModel):
     blocked: int = 0
     rate_limited: int = 0
     details: list[SingleSendResult] = Field(default_factory=list)
-    started_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
-    finished_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    finished_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
 
 
 class SendBehaviorLog(BaseModel):
@@ -88,7 +88,7 @@ class SendBehaviorLog(BaseModel):
     payload_snapshot: dict = Field(default_factory=dict)
     remote_ip_masked: str | None = None
     user_agent_hash: str | None = None
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
 
 
 class H5PageSpec(BaseModel):

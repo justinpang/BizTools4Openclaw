@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -48,7 +48,7 @@ class SpiderTaskResult(BaseModel):
     risk_detected: int = 0
     rate_limited: int = 0
     first_error: str | None = None
-    started_at: datetime = Field(default_factory=lambda: datetime.utcnow())
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: datetime | None = None
     duration_ms: int | None = None
     source_ids: list[str] = Field(default_factory=list, exclude=True)

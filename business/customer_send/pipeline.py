@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from infra.logger_setup import get_logger
@@ -120,7 +120,7 @@ class CustomerSendPipeline:
         if isinstance(params, dict):
             params = BatchSendParams(**params)
 
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         started_at_iso = started_at.isoformat() + "Z"
 
         enabled_channels = [c.lower() for c in (params.channels or [])]
@@ -146,14 +146,14 @@ class CustomerSendPipeline:
 
         if not targets:
             logger.info(f"[{params.task_id}] 无 targets，结束")
-            result.finished_at = datetime.utcnow().isoformat() + "Z"
+            result.finished_at = datetime.now(timezone.utc).isoformat() + "Z"
             self.storage.upsert_job(result)
             return result
 
         if not enabled_channels:
             logger.warning(f"[{params.task_id}] 所有渠道都未启用")
             result.status = "failed"
-            result.finished_at = datetime.utcnow().isoformat() + "Z"
+            result.finished_at = datetime.now(timezone.utc).isoformat() + "Z"
             self.storage.upsert_job(result)
             return result
 
@@ -322,7 +322,7 @@ class CustomerSendPipeline:
         if result.failed / total_done > settings.customer_send.CUSTOMER_SEND_FAILED_ALERT_RATIO:
             self._emit_alert("failed_ratio", result)
 
-        result.finished_at = datetime.utcnow().isoformat() + "Z"
+        result.finished_at = datetime.now(timezone.utc).isoformat() + "Z"
 
         # 持久化
         try:
