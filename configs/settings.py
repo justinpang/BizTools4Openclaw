@@ -141,6 +141,61 @@ class AppSettings(BaseSettings):
     queue: QueueSettings = Field(default_factory=QueueSettings)
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     db: DBSettings = Field(default_factory=DBSettings)
+    spider: "SpiderSettings" = Field(default_factory=lambda: SpiderSettings())
+
+
+# =====================
+# T09 多源爬虫配置
+# =====================
+
+
+class SpiderSettings(BaseSettings):
+    """多源爬虫配置（全部从 .env 读取，不硬编码链接/关键词）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    SPIDER_MAX_PAGES_DEFAULT: int = 20
+    SPIDER_MAX_ITEMS_PER_URL: int = 100
+    SPIDER_BATCH_INSERT_SIZE: int = 200
+    SPIDER_DEFAULT_RENDER_JS: bool = False
+    SPIDER_DEFAULT_USE_PROXY: bool = True
+    SPIDER_COUNTRY_DEFAULT: str = "CN"
+    SPIDER_SENSITIVE_HIGH_THRESHOLD: int = 3
+    SPIDER_COMPLIANCE_ENABLED: bool = True
+    SPIDER_PII_MASK_ENABLED: bool = True
+    SPIDER_SUMMARY_FIELDS_MASK: str = "phone,email,id_card,bank_card,license_plate,wechat,qq,name"
+
+    # 渠道种子 / 搜索模板
+    SPIDER_GENERIC_WEB_SEEDS: str = ""
+    SPIDER_FORUM_SEEDS: str = ""
+    SPIDER_DOUYIN_SEARCH_TEMPLATE: str = ""
+    SPIDER_XHS_SEARCH_TEMPLATE: str = ""
+    SPIDER_ZHIHU_SEARCH_TEMPLATE: str = ""
+    SPIDER_BAIDU_QA_TEMPLATE: str = ""
+    SPIDER_58_TEMPLATE: str = ""
+    SPIDER_XIANYU_TEMPLATE: str = ""
+    SPIDER_BID_SEARCH_TEMPLATE: str = ""
+    SPIDER_GOV_SEARCH_TEMPLATE: str = ""
+    SPIDER_PUBLIC_RESOURCE_TEMPLATE: str = ""
+    SPIDER_QCC_SEARCH_TEMPLATE: str = ""
+    SPIDER_TYC_SEARCH_TEMPLATE: str = ""
+
+    # 渠道开关
+    SPIDER_CHANNEL_GENERIC_ENABLED: bool = True
+    SPIDER_CHANNEL_DOUYIN_XHS_ENABLED: bool = True
+    SPIDER_CHANNEL_ZHIHU_BAIDU_ENABLED: bool = True
+    SPIDER_CHANNEL_LOCAL_ENABLED: bool = True
+    SPIDER_CHANNEL_BID_GOV_ENABLED: bool = True
+    SPIDER_CHANNEL_ENTERPRISE_ENABLED: bool = True
+
+    # 任务状态 Redis 前缀
+    SPIDER_TASK_STATUS_PREFIX: str = "openclaw:spider:task:"
+    SPIDER_TASK_STATUS_TTL_SECONDS: int = 86400
+
+    def split_csv(self, value: str) -> list[str]:
+        if not value:
+            return []
+        return [x.strip() for x in value.split(",") if x.strip()]
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
