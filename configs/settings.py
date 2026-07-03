@@ -142,6 +142,7 @@ class AppSettings(BaseSettings):
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
     db: DBSettings = Field(default_factory=DBSettings)
     spider: "SpiderSettings" = Field(default_factory=lambda: SpiderSettings())
+    cleaning: "DataCleanSettings" = Field(default_factory=lambda: DataCleanSettings())
 
 
 # =====================
@@ -196,6 +197,54 @@ class SpiderSettings(BaseSettings):
         if not value:
             return []
         return [x.strip() for x in value.split(",") if x.strip()]
+
+
+# =====================
+# T10 数据清洗配置
+# =====================
+
+
+class DataCleanSettings(BaseSettings):
+    """数据清洗配置（全部从 .env 读取，关键词库不硬编码）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    # 基础参数
+    CLEAN_BATCH_SIZE: int = 200
+    CLEAN_MIN_TEXT_LEN: int = 30
+    CLEAN_PIPELINE_VERSION: str = "T10-v1.0"
+
+    # 实体抽取开关
+    CLEAN_COMPANY_ENABLED: bool = True
+    CLEAN_PHONE_ENABLED: bool = True
+    CLEAN_WECHAT_ENABLED: bool = True
+    CLEAN_BUDGET_ENABLED: bool = True
+
+    # 关键词库（逗号分隔）
+    CLEAN_INDUSTRY_KEYWORDS: str = "IT,制造业,采购,批发,零售,教育,医疗,建筑,金融,物流"
+    CLEAN_REGION_KEYWORDS: str = "北京,上海,广州,深圳,杭州,南京,武汉,成都,重庆,西安"
+    CLEAN_NEED_KEYWORDS: str = "采购,合作,代理,招聘,外包,加盟,招商,寻求,需求,寻找,招标,投标"
+    CLEAN_COMPANY_SUFFIXES: str = "公司,有限公司,工作室,集团,科技,厂,中心,部,工作室"
+    CLEAN_KEYWORDS_TOPK: int = 8
+
+    # 违规/高风险判定阈值
+    CLEAN_HIGH_VIOLATION_RISK: str = "high"
+    CLEAN_HIGH_VIOLATION_HITS: int = 3
+    CLEAN_AD_JUNK_PATTERNS: str = ""
+    CLEAN_BLACKLIST_DOMAINS: str = ""
+
+    # 告警
+    CLEAN_ANOMALY_ALERT_RATIO: float = 0.05
+    CLEAN_BLOCKED_ALERT_COUNT: int = 10
+
+    # 任务状态
+    CLEAN_REDIS_STATUS_PREFIX: str = "openclaw:clean:task:"
+    CLEAN_REDIS_STATUS_TTL: int = 86400
+
+    def split_csv(self, value: str) -> list[str]:
+        if not value:
+            return []
+        return [x.strip() for x in str(value).split(",") if x.strip()]
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
