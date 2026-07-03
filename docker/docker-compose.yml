@@ -1,0 +1,164 @@
+# ====================================================================
+#  BizTools4Openclaw — docker-compose.yml
+#  三服务编排：PostgreSQL (db) + Redis (cache/queue) + App (FastAPI + Web Admin)
+#
+#  使用方式：
+#     生产模式： docker compose --profile prod up -d --build
+#     开发模式： docker compose --profile dev  up -d --build
+#     查看日志： docker compose logs -f app
+#     停止所有： docker compose --profile prod down
+#
+#  前置条件：
+#     1. 在项目根目录创建 .env（可从 .env.example 复制）
+#     2. 必须配置：DB_PASSWORD, DB_ENCRYPTION_KEY(≥32), WEB_ADMIN_PASSWORD_PLAIN
+# ====================================================================
+
+services:
+
+  # ================= PostgreSQL + pgvector =================
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: biz-tools-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中配置 DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-openclaw_biz}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-openclaw_biz}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - biz-tools-net
+    # dev profile 暴露端口到宿主，prod 仅容器间访问
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    profiles:
+      - dev
+      - prod
+
+  # ================= Redis（会话缓存 + 异步任务队列） =================
+  redis:
+    image: redis:7.2-alpine
+    container_name: biz-tools-redis
+    # AOF 持久化 + 可选 requirepass
+    command: >
+      sh -c "
+        redis-server
+        --save 900 1
+        --save 300 10
+        --appendonly yes
+        ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+      "
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - biz-tools-net
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    profiles:
+      - dev
+      - prod
+
+  # ================= FastAPI 应用 — dev 模式 =================
+  # 特点：挂载本地代码 volume，支持 --reload 热重载；LOG_LEVEL=DEBUG
+  app-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: biz-tools-app-dev
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: DEBUG
+      DEBUG: "true"
+    volumes:
+      - ../:/app
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - biz-tools-net
+    command: >
+      uvicorn adapter.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --workers 1
+    restart: "no"
+    profiles:
+      - dev
+
+  # ================= FastAPI 应用 — prod 模式 =================
+  # 特点：不可变部署（使用镜像内代码），4 worker，LOG_LEVEL=INFO
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: biz-tools-app
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: INFO
+      ENV: production
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - biz-tools-net
+    command: >
+      uvicorn adapter.main:app
+        --host 0.0.0.0
+        --port 8000
+        --workers 4
+    restart: unless-stopped
+    profiles:
+      - prod
+
+# ================= 数据卷（持久化） =================
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ================= 专用网络 =================
+networks:
+  biz-tools-net:
+    driver: bridge
+    name: biz-tools-net
