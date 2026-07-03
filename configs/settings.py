@@ -143,6 +143,7 @@ class AppSettings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     spider: "SpiderSettings" = Field(default_factory=lambda: SpiderSettings())
     cleaning: "DataCleanSettings" = Field(default_factory=lambda: DataCleanSettings())
+    customer_send: "CustomerSendSettings" = Field(default_factory=lambda: CustomerSendSettings())
 
 
 # =====================
@@ -240,6 +241,52 @@ class DataCleanSettings(BaseSettings):
     # 任务状态
     CLEAN_REDIS_STATUS_PREFIX: str = "openclaw:clean:task:"
     CLEAN_REDIS_STATUS_TTL: int = 86400
+
+    def split_csv(self, value: str) -> list[str]:
+        if not value:
+            return []
+        return [x.strip() for x in str(value).split(",") if x.strip()]
+
+
+# =====================
+# T11 多渠道商机触达配置
+# =====================
+
+
+class CustomerSendSettings(BaseSettings):
+    """多渠道触达配置（全部从 .env 读取，密钥/域名零硬编码）。"""
+
+    model_config = SettingsConfigDict(env_prefix="", extra="ignore")
+
+    # 渠道开关
+    CUSTOMER_SEND_EMAIL_ENABLED: bool = True
+    CUSTOMER_SEND_WECHAT_ENABLED: bool = True
+    CUSTOMER_SEND_FEISHU_ENABLED: bool = True
+    CUSTOMER_SEND_H5_ENABLED: bool = False
+
+    # H5 对外短链域名
+    CUSTOMER_SEND_H5_BASE_URL: str = "https://claw.example.com"
+
+    # 批量大小默认值（仅对调用者节流，真正限流仍走 core.send_core.RateLimiter）
+    CUSTOMER_SEND_BATCH_SIZE_DEFAULT: int = 50
+
+    # 告警阈值（占比）
+    CUSTOMER_SEND_BLOCKED_ALERT_RATIO: float = 0.1
+    CUSTOMER_SEND_FAILED_ALERT_RATIO: float = 0.2
+
+    # 模板文件目录（相对项目根）
+    CUSTOMER_SEND_TEMPLATE_DIR: str = "configs/templates"
+
+    # 版本标识
+    CUSTOMER_SEND_VERSION: str = "T11-v1.0"
+
+    # SMTP 全局回退（当 channel account token == "smtp_fallback" 时使用）
+    CUSTOMER_SEND_SMTP_HOST: str = ""
+    CUSTOMER_SEND_SMTP_PORT: int = 465
+    CUSTOMER_SEND_SMTP_USER: str = ""
+    CUSTOMER_SEND_SMTP_PASSWORD: str = ""
+    CUSTOMER_SEND_SMTP_USE_SSL: bool = True
+    CUSTOMER_SEND_SMTP_FROM: str = ""
 
     def split_csv(self, value: str) -> list[str]:
         if not value:

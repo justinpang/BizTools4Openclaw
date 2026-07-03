@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>{{opportunity_title}}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; color: #333; max-width: 640px; margin: 0 auto; padding: 20px; }
+    .header { background: #3b82f6; color: #fff; padding: 14px 18px; border-radius: 8px; }
+    .header h1 { font-size: 18px; margin: 0; }
+    .tag { display: inline-block; background: #eff6ff; color: #2563eb; padding: 3px 10px; border-radius: 999px; font-size: 12px; margin: 4px 6px 0 0; }
+    .summary { background: #f9fafb; padding: 14px 18px; border-radius: 8px; margin-top: 14px; line-height: 1.7; font-size: 14px; }
+    .score { font-weight: 600; color: #059669; }
+    .cta { display: inline-block; background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; margin-top: 16px; font-size: 14px; }
+    .footer { color: #9ca3af; font-size: 12px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{opportunity_title}}</h1>
+    <div>行业: <span class="tag">{{industry}}</span> 地区: <span class="tag">{{region}}</span></div>
+    <div>意向得分: <span class="score">{{opportunity_score}}</span></div>
+  </div>
+
+  <div class="summary">
+    <strong>{{customer_name}}</strong>，您好：<br/>
+    以下商机线索由 OpenClaw 智能体为您筛选，行业：<b>{{industry}}</b>，地域：<b>{{region}}</b>。<br/>
+    关键需求标签：<i>{{need_keywords_csv}}</i>。<br/>
+    <br/>
+    如需查看完整详情或提交意向，请点击：
+    <a class="cta" href="{{h5_url}}">立即查看详情</a>
+    <br/>
+    <small>商机 ID：{{opportunity_id}}｜发送日期：{{send_date}}</small>
+  </div>
+
+  <div class="footer">
+    本邮件由系统自动发送。若您无意接收，请忽略。<br/>
+    tenant_id: <code>{{tenant_id}}</code>
+  </div>
+</body>
+</html>

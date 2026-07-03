@@ -1,0 +1,50 @@
+{
+  "msg_type": "interactive",
+  "card": {
+    "config": {
+      "wide_screen_mode": true
+    },
+    "header": {
+      "template": "blue",
+      "title": {
+        "tag": "plain_text",
+        "content": "{{opportunity_title}}"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "**客户：** {{customer_name}}\\n**行业：** {{industry}}｜**地区：** {{region}}\\n**意向得分：** {{opportunity_score}}\\n**关键需求：** {{need_keywords_csv}}"
+        }
+      },
+      {
+        "tag": "note",
+        "elements": [
+          {
+            "tag": "plain_text",
+            "content": "商机 ID：{{opportunity_id}}｜发送时间：{{send_date}}"
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "tag": "plain_text",
+              "content": "查看详情"
+            },
+            "type": "primary",
+            "url": "{{h5_url}}"
+          }
+        ]
+      }
+    ]
+  }
+}

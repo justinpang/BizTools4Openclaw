@@ -1,0 +1,34 @@
+{
+  "msgtype": "template_card",
+  "template_card": {
+    "card_type": "text_notice",
+    "source": {
+      "icon_url": "",
+      "desc": "OpenClaw 商机推荐"
+    },
+    "main_title": {
+      "title": "{{opportunity_title}}",
+      "desc": "意向得分：{{opportunity_score}}｜行业：{{industry}}｜地区：{{region}}"
+    },
+    "emphasis_content": {
+      "title": "{{opportunity_score}}",
+      "desc": "意向等级"
+    },
+    "quote_area": {
+      "quote_text": "关键需求标签：{{need_keywords_csv}}"
+    },
+    "horizontal_content_list": [
+      {"keyname": "客户", "value": "{{customer_name}}"},
+      {"keyname": "行业", "value": "{{industry}}"},
+      {"keyname": "地区", "value": "{{region}}"},
+      {"keyname": "商机ID", "value": "{{opportunity_id}}"}
+    ],
+    "jump_list": [
+      {"type": 1, "url": "{{h5_url}}", "title": "查看详情"}
+    ],
+    "card_action": {
+      "type": 1,
+      "url": "{{h5_url}}"
+    }
+  }
+}
