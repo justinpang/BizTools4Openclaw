@@ -66,6 +66,12 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.system.accounts",
         "btn.system.reset_password",
         "btn.system.view_secret",
+        "btn.compliance.review",
+        "btn.compliance.approve",
+        "btn.compliance.reject",
+        "btn.compliance.view_history",
+        "btn.compliance.config",
+        "btn.compliance.notification",
     },
     ROLE_OPS: {
         "btn.dashboard.view",
@@ -82,6 +88,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.leads.reject",
         "btn.leads.add_blacklist",
         "btn.audit.view",
+        "btn.compliance.notification",
     },
     ROLE_SALES: {
         "btn.dashboard.view",
@@ -89,12 +96,18 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.sales.view",
         "btn.sales.assign",
         "btn.sales.record_followup",
+        "btn.compliance.notification",
     },
     ROLE_COMPLIANCE: {
         "btn.dashboard.view",
         "btn.channels.view",
         "btn.channels.create",
         "btn.audit.view",
+        "btn.compliance.review",
+        "btn.compliance.approve",
+        "btn.compliance.reject",
+        "btn.compliance.view_history",
+        "btn.compliance.notification",
     },
 }
 
@@ -401,6 +414,7 @@ def has_permission(role: str, perm: str) -> bool:
 def role_can_view_menu(role: str, active_key: str) -> bool:
     """菜单可见性：基于 active_key 判断某角色是否能访问该菜单。"""
     ops_role = {ROLE_SUPER_ADMIN, ROLE_OPS}
+    compliance_role = {ROLE_SUPER_ADMIN, ROLE_COMPLIANCE}
     map_: dict[str, set[str]] = {
         "dashboard": VALID_ROLES,
         "data_center": VALID_ROLES,
@@ -419,6 +433,11 @@ def role_can_view_menu(role: str, active_key: str) -> bool:
         "audit_log": {ROLE_SUPER_ADMIN, ROLE_OPS, ROLE_COMPLIANCE},
         "system": {ROLE_SUPER_ADMIN},
         "accounts": {ROLE_SUPER_ADMIN},
+        "compliance_review": compliance_role,
+        "compliance_pending": compliance_role,
+        "compliance_history": compliance_role,
+        "compliance_config": {ROLE_SUPER_ADMIN},
+        "notifications": VALID_ROLES,
         "empty": VALID_ROLES,
         "403": VALID_ROLES,
     }

@@ -134,8 +134,9 @@ def list_spider_tasks(
                 "channels": sorted(VALID_CHANNELS), "statuses": sorted(TASK_STATUSES)}
 
 
-# 任务状态枚举（对齐 T19 计划）
-TASK_STATUSES = {"DRAFT", "READY", "RUNNING", "PAUSED", "COMPLETED", "FAILED", "TERMINATED"}
+# 任务状态枚举（对齐 T19 计划 + T20 合规审核）
+TASK_STATUSES = {"DRAFT", "READY", "RUNNING", "PAUSED", "COMPLETED", "FAILED", "TERMINATED",
+                 "PENDING_APPROVAL", "REJECTED"}
 VALID_CHANNELS = {"generic_web", "short_video", "xhs", "qa_platform", "b2b_supply", "bidding", "company_biz"}
 CHANNEL_LABEL = {
     "generic_web": "通用网页/论坛",
@@ -179,6 +180,12 @@ def create_spider_task(
     max_depth: int = Form(default=3),
     bid_type: str = Form(default=""),
     extract_rules: str = Form(default=""),
+    # ---- T20 compliance fields ----
+    compliance_agreed: str = Form(default="false"),
+    compliance_data_purpose: str = Form(default=""),
+    compliance_retention: str = Form(default=""),
+    compliance_privacy: str = Form(default="false"),
+    compliance_site_verified: str = Form(default="false"),
     session: dict = Depends(require_admin),
 ):
     try:
@@ -187,6 +194,57 @@ def create_spider_task(
         if channel and channel not in VALID_CHANNELS:
             raise HTTPException(status_code=400, detail="channel 不合法，允许值：" + ",".join(sorted(VALID_CHANNELS)))
         spider_name = (spider_name or "").strip() or channel
+
+        # ---- T20 compliance: 前置校验 ----
+        # 1) 合规协议勾选校验
+        if compliance_agreed.strip().lower() not in ("true", "1", "yes", "on"):
+            raise HTTPException(status_code=400, detail="请先勾选数据采集合规协议")
+        # 2) 数据用途 & 留存周期 必填
+        compliance_data_purpose = (compliance_data_purpose or "").strip()
+        compliance_retention = (compliance_retention or "").strip()
+        if not compliance_data_purpose:
+            raise HTTPException(status_code=400, detail="请选择数据用途")
+        if not compliance_retention:
+            raise HTTPException(status_code=400, detail="请选择数据留存周期")
+        # 3) 隐私承诺 & 站点核对 勾选
+        if compliance_privacy.strip().lower() not in ("true", "1", "yes", "on"):
+            raise HTTPException(status_code=400, detail="请勾选隐私采集承诺（确认不采集隐私信息）")
+        if compliance_site_verified.strip().lower() not in ("true", "1", "yes", "on"):
+            raise HTTPException(status_code=400, detail="请勾选采集站点核对（确认不含违规站点）")
+        # 4) 违规关键词检测：keywords / url_template / platform / company_keywords
+        try:
+            from web_admin.api.compliance_rules import detect_forbidden_words
+            forbidden_check_text = " ".join([
+                keywords or "",
+                url_template or "",
+                platform or "",
+                company_keywords or "",
+            ])
+            hits = detect_forbidden_words(forbidden_check_text)
+        except Exception:
+            hits = []
+        if hits:
+            raise HTTPException(status_code=400, detail="检测到违规/隐私关键词：" + ", ".join(hits[:10]))
+        # 5) 判定是否需要走审批流程
+        try:
+            from web_admin.api.compliance_rules import needs_approval_for_channel
+            needs_approval = needs_approval_for_channel(channel)
+        except Exception:
+            needs_approval = False
+        initial_status = "PENDING_APPROVAL" if needs_approval else "READY"
+
+        # 合规字段写入 payload
+        compliance_obj = {
+            "agreed": True,
+            "data_purpose": compliance_data_purpose,
+            "retention_period": compliance_retention,
+            "privacy_commitment": True,
+            "site_list_verified": True,
+            "submitted_at": int(time.time()),
+            "submitted_by": session.get("username", ""),
+            "needs_approval": needs_approval,
+        }
+
         payload = {
             "job_id": job_id,
             "task_name": task_name,
@@ -217,9 +275,10 @@ def create_spider_task(
             "max_depth": int(max_depth or 3),
             "bid_type": bid_type,
             "extract_rules": extract_rules,
+            "compliance": compliance_obj,
             "created_by": session.get("username", ""),
             "created_at": int(time.time()),
-            "status": "READY",
+            "status": initial_status,
             "success": 0,
             "failed": 0,
             "risk_blocked": 0,
@@ -243,7 +302,8 @@ def create_spider_task(
             scheduler.add_cron(job_id=job_id, func=_job, expression=cron)
         except Exception as exc:
             logger.info(f"任务加入调度失败（仅持久化不阻塞）: {exc}")
-        return {"code": 0, "msg": "ok", "task": payload}
+        return {"code": 0, "msg": "ok", "task": payload,
+                "needs_approval": needs_approval, "forbidden_hits": []}
     except HTTPException:
         raise
     except Exception as exc:
@@ -255,6 +315,10 @@ def create_spider_task(
 def run_spider_now(job_id: str, session: dict = Depends(require_admin)):
     persisted = _list_persisted()
     meta = persisted.get(job_id) or {}
+    # ---- T20 compliance: 状态保护 ----
+    status = meta.get("status") if isinstance(meta, dict) else None
+    if status in ("PENDING_APPROVAL", "REJECTED"):
+        raise HTTPException(status_code=400, detail=f"任务状态为 {status}，请等待合规审核通过后再启动")
     spider_name = meta.get("spider_name") or job_id
     try:
         from business.multi_spider.registry import run_spider_by_name  # type: ignore

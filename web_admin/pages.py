@@ -230,6 +230,9 @@ def _page_title(active_key: str) -> str:
         "sales": "Sales Assignment",
         "audit_log": "Audit Log",
         "accounts": "Account Management",
+        "compliance_review": "Compliance Review",
+        "compliance_config": "Compliance Rules",
+        "notifications": "Message Center",
         "empty": "Empty State Demo",
         "403": "Permission Denied",
     }
@@ -346,15 +349,47 @@ def spider_page(session: dict | None = Depends(get_current_admin)):
         '    <div id="channel-specific-fields" style="width:100%;margin-top:12px;">\n'
         '      <span class="muted">Please select a channel type to display custom parameters</span>\n'
         '    </div>\n'
-        '    <button class="btn btn-primary" type="submit" data-requires-permission="btn.spider.create">Save Task</button>\n'
         '  </form>\n'
+        '  <div class="compliance-agreement-block" style="margin-top:16px;padding:16px;border:1px solid #ddd;border-radius:6px;background:#f8f9fa;">\n'
+        '    <h4 style="margin:0 0 12px 0;font-size:15px;">[Scale] Data Collection Compliance Checklist (required before save)</h4>\n'
+        '    <div id="compliance-agreement-text" class="code-out" style="max-height:120px;overflow-y:auto;margin-bottom:12px;">Loading compliance agreement...</div>\n'
+        '    <div class="row" style="flex-wrap:wrap;gap:12px;">\n'
+        '      <label><input type="checkbox" name="compliance_agreed" value="true" form="task-create-form"/> I have read and agree to the Data Collection Compliance Agreement</label>\n'
+        '    </div>\n'
+        '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
+        '      <label>Data Purpose <select name="compliance_data_purpose" form="task-create-form">\n'
+        '        <option value="">Please select</option>\n'
+        '        <option value="opportunity">Opportunity Analysis</option>\n'
+        '        <option value="market_research">Market Research</option>\n'
+        '        <option value="bidding_decision">Bidding Decision</option>\n'
+        '        <option value="industry_monitoring">Industry Monitoring</option>\n'
+        '      </select></label>\n'
+        '      <label>Retention Period <select name="compliance_retention" form="task-create-form">\n'
+        '        <option value="">Please select</option>\n'
+        '        <option value="30d">30 days</option>\n'
+        '        <option value="90d">90 days</option>\n'
+        '        <option value="180d">180 days</option>\n'
+        '        <option value="1y">1 year</option>\n'
+        '      </select></label>\n'
+        '    </div>\n'
+        '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
+        '      <label><input type="checkbox" name="compliance_privacy" value="true" form="task-create-form"/> I commit to not collecting personal privacy information (phone/email/ID number)</label>\n'
+        '    </div>\n'
+        '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
+        '      <label><input type="checkbox" name="compliance_site_verified" value="true" form="task-create-form"/> I verify that the collection sites do not violate compliance rules (no forbidden keywords in URLs/titles)</label>\n'
+        '    </div>\n'
+        '    <div class="row" style="margin-top:12px;">\n'
+        '      <button class="btn btn-primary" type="submit" form="task-create-form" data-requires-permission="btn.spider.create">Save Task</button>\n'
+        '    </div>\n'
+        '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
         '  <h3>[Search] Task Filtering</h3>\n'
         '  <div class="row">\n'
         '    <label>Status <select id="filter-status">\n'
         '      <option value="">All</option>\n'
-        '      <option value="DRAFT">Pending Review</option>\n'
+        '      <option value="PENDING_APPROVAL">Pending Approval</option>\n'
+        '      <option value="REJECTED">Rejected</option>\n'
         '      <option value="READY">Ready</option>\n'
         '      <option value="RUNNING">Running</option>\n'
         '      <option value="PAUSED">Paused</option>\n'
@@ -706,6 +741,160 @@ def page_empty(session: dict | None = Depends(get_current_admin)):
         '</section>\n'
     )
     return _render_with_permission("empty", "btn.dashboard.view", body, session)
+
+
+# ---------------------------------------------------------------------------
+# T20: Compliance Review Page
+# ---------------------------------------------------------------------------
+@router.get("/compliance/review", response_class=HTMLResponse)
+def compliance_review_page(session: dict | None = Depends(get_current_admin)):
+    body_parts = [
+        # 待审核列表
+        '<section class="panel">',
+        '  <h3>[Scale] Pending Approval Tasks</h3>',
+        '  <div class="row">',
+        '    <label>Channel <select id="pending-channel-filter">',
+        '      <option value="">All</option>',
+        '      <option value="short_video">Short Video</option>',
+        '      <option value="xhs">Little Red Book</option>',
+        '      <option value="b2b_supply">B2B Supply</option>',
+        '      <option value="generic_web">General Web</option>',
+        '      <option value="qa_platform">Q&A Platform</option>',
+        '      <option value="bidding">Bidding</option>',
+        '      <option value="company_biz">Corporate Business</option>',
+        '    </select></label>',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.review" onclick="admin.loadPendingTasks()">Load Pending</button>',
+        '  </div>',
+        '  <table class="data-table" id="pending-tasks-table">',
+        '    <thead><tr>',
+        '      <th>Task ID</th><th>Channel</th><th>Task Name</th><th>Submitter</th>',
+        '      <th>Submission Time</th><th>Data Purpose</th><th>Retention</th><th>Actions</th>',
+        '    </tr></thead>',
+        '    <tbody id="pending-tasks-body"><tr><td colspan="8" class="empty">Loading pending approval tasks...</td></tr></tbody>',
+        '  </table>',
+        '</section>',
+        # 驳回弹窗（隐藏，点击驳回按钮显示）
+        '<div id="reject-modal" class="modal" style="display:none;">',
+        '  <div class="modal-content" style="max-width:500px;">',
+        '    <h3 style="margin-top:0;">Reject Task</h3>',
+        '    <textarea id="reject-reason" rows="5" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="Please enter the reason for rejection (required)"></textarea>',
+        '    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;">',
+        '      <button class="btn" onclick="admin.closeRejectModal()">Cancel</button>',
+        '      <button class="btn btn-danger" data-requires-permission="btn.compliance.reject" onclick="admin.submitReject()">Confirm Rejection</button>',
+        '    </div>',
+        '  </div>',
+        '</div>',
+        # 已审核记录
+        '<section class="panel">',
+        '  <h3>[Clipboard] Audit History</h3>',
+        '  <div class="row">',
+        '    <button class="btn" data-requires-permission="btn.compliance.review" onclick="admin.loadApprovalHistory()">Load Approval History</button>',
+        '  </div>',
+        '  <table class="data-table" id="approval-history-table">',
+        '    <thead><tr>',
+        '      <th>Task ID</th><th>Task Name</th><th>Channel</th><th>Submitter</th>',
+        '      <th>Reviewer</th><th>Review Time</th><th>Decision</th><th>Rejection Reason</th>',
+        '    </tr></thead>',
+        '    <tbody id="approval-history-body"><tr><td colspan="8" class="empty">Click the button to load approval history...</td></tr></tbody>',
+        '  </table>',
+        '</section>',
+        # 自动初始化
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      if (admin.loadPendingTasks) admin.loadPendingTasks();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("compliance_review", "btn.compliance.review", body, session)
+
+
+# ---------------------------------------------------------------------------
+# T20: Compliance Rules Config Page
+# ---------------------------------------------------------------------------
+@router.get("/compliance/config", response_class=HTMLResponse)
+def compliance_config_page(session: dict | None = Depends(get_current_admin)):
+    body_parts = [
+        # 渠道审批规则
+        '<section class="panel">',
+        '  <h3>[Gear] Channel Approval Rules</h3>',
+        '  <p class="muted">High-risk channels require compliance officer approval; low-risk channels can be configured to skip review.</p>',
+        '  <table class="data-table" id="channel-rules-table">',
+        '    <thead><tr>',
+        '      <th>Channel</th><th>Risk Level</th><th>Requires Approval</th><th>Actions</th>',
+        '    </tr></thead>',
+        '    <tbody id="channel-rules-body"><tr><td colspan="4" class="empty">Loading channel rules...</td></tr></tbody>',
+        '  </table>',
+        '</section>',
+        # 合规协议文本
+        '<section class="panel">',
+        '  <h3>[File] Compliance Agreement Text</h3>',
+        '  <p class="muted">This text will be displayed on the task creation page; the submitter must check it.</p>',
+        '  <textarea id="agreement-text-edit" rows="12" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="Loading compliance agreement text..."></textarea>',
+        '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveAgreementText()">Save Agreement</button>',
+        '  </div>',
+        '</section>',
+        # 留存周期选项
+        '<section class="panel">',
+        '  <h3>[Calendar] Retention Period Options</h3>',
+        '  <p class="muted">Comma-separated values, e.g.: 30d,90d,180d,1y</p>',
+        '  <input type="text" id="retention-options-edit" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="30d,90d,180d,1y"/>',
+        '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveRetentionOptions()">Save Retention Options</button>',
+        '  </div>',
+        '</section>',
+        # 违规关键词黑名单
+        '<section class="panel">',
+        '  <h3>[Ban] Forbidden Keyword Blacklist</h3>',
+        '  <p class="muted">Keywords included in task parameters (title, keywords, URL, etc.) will block task creation. Comma-separated values.</p>',
+        '  <textarea id="forbidden-keywords-edit" rows="6" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="phone,email,id card,..."></textarea>',
+        '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveForbiddenKeywords()">Save Blacklist</button>',
+        '  </div>',
+        '</section>',
+        # 自动加载配置
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined" && admin.loadComplianceConfigPage) {',
+        '      admin.loadComplianceConfigPage();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("compliance_config", "btn.compliance.config", body, session)
+
+
+# ---------------------------------------------------------------------------
+# T20: Notification Center Page
+# ---------------------------------------------------------------------------
+@router.get("/notifications", response_class=HTMLResponse)
+def notifications_page(session: dict | None = Depends(get_current_admin)):
+    body_parts = [
+        '<section class="panel">',
+        '  <h3>[Bell] Recent Notifications</h3>',
+        '  <div class="row" style="gap:8px;">',
+        '    <button class="btn btn-sm" onclick="admin.loadNotificationsList()">Refresh</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.compliance.notification" onclick="admin.markAllNotificationsRead()">Mark All Read</button>',
+        '  </div>',
+        '  <table class="data-table" id="notifications-table">',
+        '    <thead><tr>',
+        '      <th>Time</th><th>Type</th><th>Title</th><th>Content</th><th>Status</th><th>Actions</th>',
+        '    </tr></thead>',
+        '    <tbody id="notifications-body"><tr><td colspan="6" class="empty">Loading notifications...</td></tr></tbody>',
+        '  </table>',
+        '</section>',
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined" && admin.loadNotificationsList) admin.loadNotificationsList();',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("notifications", "btn.compliance.notification", body, session)
 
 
 __all__ = ["router"]

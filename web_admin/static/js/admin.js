@@ -455,7 +455,14 @@
     var body = new FormData(form);
     fetch(API_BASE + "/spider/task", { method: "POST", body: body, headers: { "X-Requested-With": "XMLHttpRequest" } })
       .then(function (r) { return r.json(); })
-      .then(function (j) { alert((j && j.msg) || "已保存"); loadSpider(); });
+      .then(function (j) {
+        var msg = (j && j.msg) || "Saved";
+        if (j && j.needs_approval) msg = "[Pending Review] Task saved, waiting for compliance review: " + msg;
+        alert(msg);
+        if (typeof loadSpider === "function") loadSpider();
+        if (typeof loadSpiderFiltered === "function") loadSpiderFiltered();
+      })
+      .catch(function (err) { alert("Failed to create task: " + String(err || "")); });
     return false;
   }
   function runTask(id) {
@@ -1181,6 +1188,257 @@
     }
   }
 
+  // -------- T20 合规审核相关前端函数 --------
+  var _rejectTargetJobId = null;
+
+  // 加载合规协议文本（任务创建页）
+  function loadComplianceAgreementText() {
+    var target = document.getElementById("compliance-agreement-text");
+    if (!target) return;
+    api.get("/compliance/agreement_text", function (data) {
+      if (data && data.agreement_text) {
+        target.textContent = data.agreement_text;
+      }
+    }, function (err) {
+      target.textContent = "[Failed to load compliance agreement] " + String(err || "");
+    });
+  }
+
+  // 加载待审核任务列表
+  function loadPendingTasks() {
+    api.get("/compliance/tasks/pending", function (data) {
+      var tbody = document.getElementById("pending-tasks-body");
+      if (!tbody) return;
+      var items = data && data.items ? data.items : [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">[OK] No pending approval tasks at this time</td></tr>';
+        return;
+      }
+      var html = "";
+      for (var i = 0; i < items.length; i++) {
+        var t = items[i];
+        var c = t.compliance || {};
+        html += "<tr>"
+          + "<td>" + escapeHtml(t.job_id || "") + "</td>"
+          + "<td>" + escapeHtml(t.channel || "") + "</td>"
+          + "<td>" + escapeHtml(t.task_name || "") + "</td>"
+          + "<td>" + escapeHtml(t.submitted_by || "") + "</td>"
+          + "<td>" + (t.submitted_at ? new Date(t.submitted_at * 1000).toLocaleString() : "-") + "</td>"
+          + "<td>" + escapeHtml(c.data_purpose || "") + "</td>"
+          + "<td>" + escapeHtml(c.retention_period || "") + "</td>"
+          + '<td class="actions">'
+          + '<a class="btn btn-sm btn-primary" data-requires-permission="btn.compliance.approve" href="javascript:admin.approveTask(\'' + t.job_id + '\')">Approve</a> '
+          + '<a class="btn btn-sm btn-danger" data-requires-permission="btn.compliance.reject" href="javascript:admin.openRejectModal(\'' + t.job_id + '\')">Reject</a> '
+          + '<a class="btn btn-sm" href="/admin/spider/' + t.job_id + '">View</a>'
+          + "</td></tr>";
+      }
+      tbody.innerHTML = html;
+      applyPermission();
+    }, function (err) {
+      var tbody = document.getElementById("pending-tasks-body");
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">[ERROR] Failed to load: ' + escapeHtml(String(err || "")) + "</td></tr>";
+    });
+  }
+
+  // 审核通过
+  function approveTask(jobId) {
+    if (!confirm("Confirm approval for task " + jobId + "? Once approved, the task status will change to READY and can be started.")) return;
+    api.post("/compliance/task/" + encodeURIComponent(jobId) + "/approve", {}, function (data) {
+      alert("Task approved: " + jobId);
+      loadPendingTasks();
+      loadApprovalHistory();
+    }, function (err) { alert("Approval failed: " + String(err || "")); });
+  }
+
+  // 打开驳回弹窗
+  function openRejectModal(jobId) {
+    _rejectTargetJobId = jobId;
+    var modal = document.getElementById("reject-modal");
+    if (modal) {
+      modal.style.display = "block";
+      var ta = document.getElementById("reject-reason");
+      if (ta) { ta.value = ""; ta.focus(); }
+    }
+  }
+
+  // 关闭驳回弹窗
+  function closeRejectModal() {
+    var modal = document.getElementById("reject-modal");
+    if (modal) modal.style.display = "none";
+    _rejectTargetJobId = null;
+  }
+
+  // 提交驳回
+  function submitReject() {
+    var ta = document.getElementById("reject-reason");
+    var reason = (ta && ta.value || "").trim();
+    if (!reason) { alert("Rejection reason cannot be empty"); return; }
+    if (!_rejectTargetJobId) { alert("No target task selected, please retry"); return; }
+    var body = new FormData();
+    body.append("reason", reason);
+    api.post("/compliance/task/" + encodeURIComponent(_rejectTargetJobId) + "/reject", body, function (data) {
+      alert("Task rejected successfully");
+      closeRejectModal();
+      loadPendingTasks();
+      loadApprovalHistory();
+    }, function (err) { alert("Rejection failed: " + String(err || "")); });
+  }
+
+  // 加载审核历史记录
+  function loadApprovalHistory() {
+    api.get("/compliance/tasks/history", function (data) {
+      var tbody = document.getElementById("approval-history-body");
+      if (!tbody) return;
+      var items = data && data.items ? data.items : [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No audit record at this time</td></tr>';
+        return;
+      }
+      var html = "";
+      for (var i = 0; i < items.length; i++) {
+        var rec = items[i];
+        html += "<tr>"
+          + "<td>" + escapeHtml(rec.job_id || "") + "</td>"
+          + "<td>" + escapeHtml(rec.task_name || "") + "</td>"
+          + "<td>" + escapeHtml(rec.channel || "") + "</td>"
+          + "<td>" + escapeHtml(rec.submitted_by || "") + "</td>"
+          + "<td>" + escapeHtml(rec.reviewed_by || "") + "</td>"
+          + "<td>" + (rec.reviewed_at ? new Date(rec.reviewed_at * 1000).toLocaleString() : "-") + "</td>"
+          + '<td><span class="status status-' + (rec.decision || "UNKNOWN").toLowerCase() + '">' + escapeHtml(rec.decision || "-") + '</span></td>'
+          + "<td>" + escapeHtml(rec.reject_reason || "-") + "</td>"
+          + "</tr>";
+      }
+      tbody.innerHTML = html;
+    }, function (err) {
+      var tbody = document.getElementById("approval-history-body");
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="empty">[ERROR] Failed to load history: ' + escapeHtml(String(err || "")) + "</td></tr>";
+    });
+  }
+
+  // 加载合规配置页（渠道规则、协议文本、留存选项、关键词）
+  function loadComplianceConfigPage() {
+    api.get("/compliance/config", function (data) {
+      // 1. 渠道审批规则
+      var rulesBody = document.getElementById("channel-rules-body");
+      if (rulesBody && data.channel_rules) {
+        var html = "";
+        var keys = Object.keys(data.channel_rules);
+        for (var i = 0; i < keys.length; i++) {
+          var ch = keys[i];
+          var rule = data.channel_rules[ch] || {};
+          var checked = rule.need_approval ? "checked" : "";
+          html += "<tr>"
+            + "<td>" + escapeHtml(ch) + "</td>"
+            + '<td><input type="text" value="' + escapeHtml(rule.risk_level || "") + '" data-channel="' + escapeHtml(ch) + '" data-field="risk_level" class="channel-rule-input" style="width:100%;"/></td>'
+            + '<td style="text-align:center;"><input type="checkbox" data-channel="' + escapeHtml(ch) + '" data-field="need_approval" class="channel-rule-checkbox" ' + checked + '/></td>'
+            + '<td><button class="btn btn-sm btn-primary" data-channel="' + escapeHtml(ch) + '" onclick="admin.saveChannelRule(\'' + escapeHtml(ch) + '\')" data-requires-permission="btn.compliance.config">Save</button></td>'
+            + "</tr>";
+        }
+        rulesBody.innerHTML = html;
+        applyPermission();
+      }
+      // 2. 合规协议文本
+      var ag = document.getElementById("agreement-text-edit");
+      if (ag) ag.value = data.agreement_text || "";
+      // 3. 留存周期选项
+      var rt = document.getElementById("retention-options-edit");
+      if (rt) rt.value = (data.retention_options && data.retention_options.join ? data.retention_options.join(",") : "30d,90d,180d,1y");
+      // 4. 违规关键词
+      var kw = document.getElementById("forbidden-keywords-edit");
+      if (kw) kw.value = (data.forbidden_keywords && data.forbidden_keywords.join ? data.forbidden_keywords.join(",") : "phone,email,id card");
+    }, function (err) {
+      alert("Failed to load compliance config: " + String(err || ""));
+    });
+  }
+
+  // 保存单个渠道规则
+  function saveChannelRule(channel) {
+    var inputs = document.querySelectorAll(".channel-rule-input[data-channel='" + channel + "']");
+    var checkbox = document.querySelector(".channel-rule-checkbox[data-channel='" + channel + "']");
+    var risk_level = "";
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].getAttribute("data-field") === "risk_level") risk_level = inputs[i].value.trim();
+    }
+    if (!risk_level) risk_level = "MEDIUM";
+    var need_approval = checkbox && checkbox.checked ? "true" : "false";
+    var body = new FormData();
+    body.append("channel", channel);
+    body.append("risk_level", risk_level);
+    body.append("need_approval", need_approval);
+    api.post("/compliance/config/channel_rules", body, function (data) {
+      alert("Channel rule saved: " + channel);
+    }, function (err) { alert("Failed to save: " + String(err || "")); });
+  }
+
+  // 保存协议文本
+  function saveAgreementText() {
+    var ta = document.getElementById("agreement-text-edit");
+    if (!ta) return;
+    var body = new FormData();
+    body.append("text", ta.value || "");
+    api.post("/compliance/config/agreement_text", body, function (data) { alert("Compliance agreement saved"); },
+      function (err) { alert("Failed to save: " + String(err || "")); });
+  }
+
+  // 保存留存周期选项
+  function saveRetentionOptions() {
+    var inp = document.getElementById("retention-options-edit");
+    if (!inp) return;
+    var body = new FormData();
+    body.append("options", inp.value || "");
+    api.post("/compliance/config/retention_options", body, function (data) { alert("Retention options saved"); },
+      function (err) { alert("Failed to save: " + String(err || "")); });
+  }
+
+  // 保存违规关键词
+  function saveForbiddenKeywords() {
+    var ta = document.getElementById("forbidden-keywords-edit");
+    if (!ta) return;
+    var body = new FormData();
+    body.append("keywords", ta.value || "");
+    api.post("/compliance/config/forbidden_keywords", body, function (data) { alert("Forbidden keyword list saved"); },
+      function (err) { alert("Failed to save: " + String(err || "")); });
+  }
+
+  // 通知中心：加载通知列表
+  function loadNotificationsList() {
+    api.get("/compliance/notifications", function (data) {
+      var tbody = document.getElementById("notifications-body");
+      if (!tbody) return;
+      var items = data && data.items ? data.items : [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">[OK] No notifications</td></tr>';
+        return;
+      }
+      var html = "";
+      for (var i = 0; i < items.length; i++) {
+        var n = items[i];
+        var status = n.read ? "READ" : "UNREAD";
+        var link = n.link ? '<a class="btn btn-sm" href="' + escapeHtml(n.link) + '">View</a>' : "";
+        html += "<tr>"
+          + "<td>" + (n.created_at ? new Date(n.created_at * 1000).toLocaleString() : "-") + "</td>"
+          + "<td>" + escapeHtml(n.type || "") + "</td>"
+          + "<td>" + escapeHtml(n.title || "") + "</td>"
+          + "<td>" + escapeHtml(n.content || "") + "</td>"
+          + '<td><span class="status status-' + status.toLowerCase() + '">' + status + "</span></td>"
+          + "<td>" + link + "</td>"
+          + "</tr>";
+      }
+      tbody.innerHTML = html;
+    }, function (err) {
+      var tbody = document.getElementById("notifications-body");
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty">[ERROR] Failed to load: ' + escapeHtml(String(err || "")) + "</td></tr>";
+    });
+  }
+
+  // 通知中心：标记全部已读
+  function markAllNotificationsRead() {
+    api.post("/compliance/notifications/read_all", {}, function (data) {
+      alert("All notifications marked as read");
+      loadNotificationsList();
+    }, function (err) { alert("Operation failed: " + String(err || "")); });
+  }
+
   // -------- 导出到全局命名空间 --------
   window.admin = {
     ui: {
@@ -1244,6 +1502,24 @@
     createAdminAccount: createAdminAccount,
     resetAccountPassword: resetAccountPassword,
     toggleAccountDisabled: toggleAccountDisabled,
+
+    // T20 合规审核
+    loadComplianceAgreementText: loadComplianceAgreementText,
+    loadPendingTasks: loadPendingTasks,
+    approveTask: approveTask,
+    openRejectModal: openRejectModal,
+    closeRejectModal: closeRejectModal,
+    submitReject: submitReject,
+    loadApprovalHistory: loadApprovalHistory,
+    loadComplianceConfigPage: loadComplianceConfigPage,
+    saveChannelRule: saveChannelRule,
+    saveAgreementText: saveAgreementText,
+    saveRetentionOptions: saveRetentionOptions,
+    saveForbiddenKeywords: saveForbiddenKeywords,
+
+    // T20 通知中心
+    loadNotificationsList: loadNotificationsList,
+    markAllNotificationsRead: markAllNotificationsRead,
   };
 
   // 页面就绪后自动 bootstrap

@@ -45,6 +45,21 @@ MENU_GROUPS: list[dict] = [
         ],
     },
     {
+        "group_key": "compliance",
+        "title": "合规审核",
+        "icon": "🛡",
+        "items": [
+            {"key": "compliance_review", "title": "任务审核", "href": "/admin/compliance/review", "icon": "✅",
+             "roles": {"super_admin", "compliance"}},
+            {"key": "compliance_pending", "title": "待审核列表", "href": "/admin/compliance/review?tab=pending", "icon": "⏳",
+             "roles": {"super_admin", "compliance"}},
+            {"key": "compliance_history", "title": "审核记录", "href": "/admin/compliance/review?tab=history", "icon": "📋",
+             "roles": {"super_admin", "compliance"}},
+            {"key": "compliance_config", "title": "审核规则配置", "href": "/admin/compliance/config", "icon": "⚙",
+             "roles": {"super_admin"}},
+        ],
+    },
+    {
         "group_key": "opportunity",
         "title": "商机管理",
         "icon": "💼",
@@ -76,6 +91,8 @@ MENU_GROUPS: list[dict] = [
         "title": "系统设置",
         "icon": "⚙",
         "items": [
+            {"key": "notifications", "title": "消息中心", "href": "/admin/notifications", "icon": "🔔",
+             "roles": {"super_admin", "ops", "sales", "compliance"}},
             {"key": "audit_log", "title": "操作日志", "href": "/admin/audit_log", "icon": "📜",
              "roles": {"super_admin", "ops", "compliance"}},
             {"key": "accounts",  "title": "账号管理", "href": "/admin/system/accounts", "icon": "👤",

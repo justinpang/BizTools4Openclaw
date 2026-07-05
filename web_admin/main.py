@@ -12,6 +12,7 @@ from web_admin.api import (
     audit_router,
     audit_enhanced_router,
     channels_router,
+    compliance_router,
     dashboard_router,
     leads_router,
     sales_router,
@@ -45,6 +46,7 @@ def mount_on(app: FastAPI) -> None:
     api_router.include_router(audit_router)
     api_router.include_router(audit_enhanced_router)
     api_router.include_router(accounts_router)
+    api_router.include_router(compliance_router)
     app.mount("/api/admin", api_router, name="admin-api")
 
     # 2) 页面路由（/admin/*）

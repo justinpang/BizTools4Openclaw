@@ -10,6 +10,7 @@ from web_admin.api.sales_mgmt import router as sales_router
 from web_admin.api.audit_log import router as audit_router
 from web_admin.api.audit_enhanced import router as audit_enhanced_router
 from web_admin.api.accounts import router as accounts_router
+from web_admin.api.compliance_rules import router as compliance_router
 
 __all__ = [
     "dashboard_router",
@@ -20,4 +21,5 @@ __all__ = [
     "audit_router",
     "audit_enhanced_router",
     "accounts_router",
+    "compliance_router",
 ]
