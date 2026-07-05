@@ -91,7 +91,7 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '<span class="role-tag role-' + role + '">' + role_label + '</span>'
         '<span class="user-name">' + username + '</span>'
         '<form method="POST" action="/admin/logout" class="logout-form" style="display:inline;margin-left:8px;">'
-        '<button type="submit" class="btn btn-sm">Log out</button>'
+        '<button type="submit" class="btn btn-sm">退出登录</button>'
         '</form>'
     )
 
@@ -101,7 +101,7 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '<head>\n'
         '<meta charset="utf-8"/>\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1"/>\n'
-        '<title>' + title + ' \u00b7 BizTools4Openclaw Admin Panel</title>\n'
+        '<title>' + title + ' · BizTools4Openclaw 管理后台</title>\n'
         '<link rel="stylesheet" href="/admin/static/css/admin.css"/>\n'
         '</head>\n'
         '<body class="page-v2 page-' + active_key + '">\n'
@@ -114,7 +114,7 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '      <header class="topbar-v2">\n'
         '        <div class="breadcrumb" id="breadcrumb">' + crumbs_html + '</div>\n'
         '        <div class="topbar-right">\n'
-        '          <input class="global-search" id="global-search" type="text" placeholder="Search menu (press Enter)"/>\n'
+        '          <input class="global-search" id="global-search" type="text" placeholder="搜索菜单（按回车）"/>\n'
         '          <div class="user-area-v2">' + user_zone_html + '</div>\n'
         '        </div>\n'
         '      </header>\n'
@@ -157,24 +157,24 @@ def _login_page_html(error_msg: str | None = None) -> str:
         '<head>\n'
         '<meta charset="utf-8"/>\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1"/>\n'
-        '<title>Login \u00b7 BizTools4Openclaw Admin Panel</title>\n'
+        '<title>登录 · BizTools4Openclaw 管理后台</title>\n'
         '<link rel="stylesheet" href="/admin/static/css/admin.css"/>\n'
         '</head>\n'
         '<body class="login-body">\n'
         '  <div class="login-card">\n'
-        '    <h1>[Lock] Admin Panel Login</h1>\n'
-        '    <p class="hint">Username / password configured by ops in .env. Visible menus depend on role.</p>\n'
+        '    <h1>🔒 管理后台登录</h1>\n'
+        '    <p class="hint">账号 / 密码 由运维配置在 .env 中。可见菜单随角色变化。</p>\n'
         '    ' + err + '\n'
         '    <form method="POST" action="/admin/login" class="login-form">\n'
-        '      <label>Account\n'
-        '        <input type="text" name="username" required autocomplete="username" placeholder="Enter username"/>\n'
+        '      <label>账号\n'
+        '        <input type="text" name="username" required autocomplete="username" placeholder="请输入用户名"/>\n'
         '      </label>\n'
-        '      <label>Password\n'
-        '        <input type="password" name="password" required autocomplete="current-password" placeholder="Enter password"/>\n'
+        '      <label>密码\n'
+        '        <input type="password" name="password" required autocomplete="current-password" placeholder="请输入密码"/>\n'
         '      </label>\n'
-        '      <button type="submit" class="btn btn-primary">LOG IN</button>\n'
+        '      <button type="submit" class="btn btn-primary">登 录</button>\n'
         '    </form>\n'
-        '    <p class="footer">&copy; BizTools4Openclaw \u00b7 Sessions encrypted, auto-expire.</p>\n'
+        '    <p class="footer">&copy; BizTools4Openclaw \u00b7 会话已加密存储，自动过期</p>\n'
         '  </div>\n'
         '</body>\n'
         '</html>\n'
@@ -228,49 +228,49 @@ def _render_with_permission(active_key: str, perm: str, body_html: str, session:
     role = session.get("role") or ROLE_SUPER_ADMIN
     if not has_permission(role, perm) or not role_can_view_menu(role, active_key):
         forbidden_body = _forbidden_body(active_key, missing_perm=perm)
-        return HTMLResponse(_layout_v2("Permission denied", "403", forbidden_body, session))
+        return HTMLResponse(_layout_v2("权限不足", "403", forbidden_body, session))
     return HTMLResponse(_layout_v2(_page_title(active_key), active_key, body_html, session))
 
 
 def _page_title(active_key: str) -> str:
     """Return page title from active_key."""
     map_ = {
-        "dashboard": "Dashboard",
-        "spider": "Spider Tasks",
-        "spider_detail": "Task Detail",
-        "leads": "Leads",
-        "channels": "Channel Accounts",
-        "sales": "Sales Assignment",
-        "audit_log": "Audit Log",
-        "accounts": "Account Management",
-        "compliance_review": "Compliance Review",
-        "compliance_config": "Compliance Rules",
-        "notifications": "Message Center",
-        "data_center_dashboard": "Funnel Dashboard",
-        "data_center_collection": "Collection Stage",
-        "data_center_cleaning": "Cleaning Stage",
-        "data_center_compliance": "Compliance Stage",
-        "data_center_grading": "Grading Stage",
-        "data_center_outreach": "Outreach Stage",
-        "data_center_sales": "Sales Closing Stage",
-        "data_center_opportunity": "Opportunity Timeline",
-        "empty": "Empty State Demo",
-        "403": "Permission Denied",
+        "dashboard": "仪表板",
+        "spider": "爬虫任务",
+        "spider_detail": "任务详情",
+        "leads": "商机线索",
+        "channels": "渠道账号",
+        "sales": "销售分配",
+        "audit_log": "操作日志",
+        "accounts": "账号管理",
+        "compliance_review": "合规审核",
+        "compliance_config": "合规规则配置",
+        "notifications": "消息中心",
+        "data_center_dashboard": "全链路漏斗看板",
+        "data_center_collection": "采集阶段",
+        "data_center_cleaning": "清洗结构化",
+        "data_center_compliance": "合规校验",
+        "data_center_grading": "商机分级",
+        "data_center_outreach": "客户触达",
+        "data_center_sales": "销售闭环",
+        "data_center_opportunity": "商机时间线",
+        "empty": "空状态演示",
+        "403": "权限不足",
     }
-    return map_.get(active_key, "Admin Panel")
+    return map_.get(active_key, "管理后台")
 
 
 def _forbidden_body(active_key: str, missing_perm: str) -> str:
     return (
         '<div class="empty-state">\n'
-        '  <div class="empty-state-icon">[NoEntry]</div>\n'
-        '  <div class="empty-state-title">Permission Denied</div>\n'
+        '  <div class="empty-state-icon">🚫</div>\n'
+        '  <div class="empty-state-title">权限不足</div>\n'
         '  <div class="empty-state-desc">\n'
-        '    Current role cannot access this page (<code>' + active_key + '</code>, missing permission\n'
-        '    <code>' + missing_perm + '</code>). Please ask the super admin.\n'
+        '    当前角色无权访问此页面 (<code>' + active_key + '</code>, 缺少权限\n'
+        '    <code>' + missing_perm + '</code>). 请联系超级管理员开通.\n'
         '  </div>\n'
         '  <div class="empty-state-actions">\n'
-        '    <a class="btn btn-primary" href="/admin/dashboard">Back to Dashboard</a>\n'
+        '    <a class="btn btn-primary" href="/admin/dashboard">返回仪表板</a>\n'
         '  </div>\n'
         '</div>\n'
     )
@@ -283,19 +283,19 @@ def _forbidden_body(active_key: str, missing_perm: str) -> str:
 def dashboard_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="stats-grid" id="stats-grid">\n'
-        '  <div class="stat-card"><div class="label">Spider Tasks</div><div class="value" data-key="spider_tasks">-</div></div>\n'
-        '  <div class="stat-card"><div class="label">Total Crawled</div><div class="value" data-key="crawled_total">-</div></div>\n'
-        '  <div class="stat-card"><div class="label">Valid Leads</div><div class="value" data-key="leads_total">-</div></div>\n'
-        '  <div class="stat-card"><div class="label">Sent Batches</div><div class="value" data-key="send_total">-</div></div>\n'
-        '  <div class="stat-card"><div class="label">Channel Accounts</div><div class="value" data-key="accounts_total">-</div></div>\n'
+        '  <div class="stat-card"><div class="label">爬虫任务数</div><div class="value" data-key="spider_tasks">-</div></div>\n'
+        '  <div class="stat-card"><div class="label">累计抓取</div><div class="value" data-key="crawled_total">-</div></div>\n'
+        '  <div class="stat-card"><div class="label">有效商机</div><div class="value" data-key="leads_total">-</div></div>\n'
+        '  <div class="stat-card"><div class="label">触达批次</div><div class="value" data-key="send_total">-</div></div>\n'
+        '  <div class="stat-card"><div class="label">渠道账号数</div><div class="value" data-key="accounts_total">-</div></div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Chart] Sales Conversion Funnel</h3>\n'
-        '  <div id="funnel-area" class="funnel-area"><div class="empty-inline">No data</div></div>\n'
+        '  <h3>📊 销售转化漏斗</h3>\n'
+        '  <div id="funnel-area" class="funnel-area"><div class="empty-inline">暂无数据</div></div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clock] Recent Scheduled Tasks</h3>\n'
-        '  <div id="recent-tasks"><div class="empty-inline">No data</div></div>\n'
+        '  <h3>🕒 最近调度任务</h3>\n'
+        '  <div id="recent-tasks"><div class="empty-inline">暂无数据</div></div>\n'
         '</section>\n'
     )
     return _render_with_permission("dashboard", "btn.dashboard.view", body, session)
@@ -305,151 +305,151 @@ def dashboard_page(session: dict | None = Depends(get_current_admin)):
 def spider_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel channel-filter-row">\n'
-        '  <h3>[Folder] 7-Channel Quick Entry</h3>\n'
+        '  <h3>📁 七渠道快速入口</h3>\n'
         '  <div class="channel-cards" id="channel-cards">\n'
         '    <a class="channel-card" data-channel="generic_web" href="/admin/spider?channel=generic_web">\n'
-        '      <span class="channel-icon">[Globe]</span>\n'
-        '      <span class="channel-title">General Web/Forum</span>\n'
-        '      <span class="channel-desc">Portal/Forum/BBS crawling</span>\n'
+        '      <span class="channel-icon">🌐</span>\n'
+        '      <span class="channel-title">通用网页/论坛</span>\n'
+        '      <span class="channel-desc">门户/论坛/BBS采集</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="short_video" href="/admin/spider?channel=short_video">\n'
-        '      <span class="channel-icon">[Movie]</span>\n'
-        '      <span class="channel-title">Short Video</span>\n'
-        '      <span class="channel-desc">Douyin/Kuaishou/Video Channel</span>\n'
+        '      <span class="channel-icon">🎬</span>\n'
+        '      <span class="channel-title">短视频</span>\n'
+        '      <span class="channel-desc">抖音/快手/视频号</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="xhs" href="/admin/spider?channel=xhs">\n'
-        '      <span class="channel-icon">[Book]</span>\n'
-        '      <span class="channel-title">Little Red Book</span>\n'
-        '      <span class="channel-desc">Notes/Videos/Likes filtering</span>\n'
+        '      <span class="channel-icon">📕</span>\n'
+        '      <span class="channel-title">小红书</span>\n'
+        '      <span class="channel-desc">笔记/视频/点赞筛选</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="qa_platform" href="/admin/spider?channel=qa_platform">\n'
-        '      <span class="channel-icon">[Q]</span>\n'
-        '      <span class="channel-title">Q&A Platform</span>\n'
-        '      <span class="channel-desc">Zhihu/Baidu Knows</span>\n'
+        '      <span class="channel-icon">❓</span>\n'
+        '      <span class="channel-title">问答平台</span>\n'
+        '      <span class="channel-desc">知乎/百度知道</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="b2b_supply" href="/admin/spider?channel=b2b_supply">\n'
-        '      <span class="channel-icon">[Factory]</span>\n'
-        '      <span class="channel-title">B2B Supply</span>\n'
-        '      <span class="channel-desc">Alibaba/Huicong</span>\n'
+        '      <span class="channel-icon">🏭</span>\n'
+        '      <span class="channel-title">供需B2B</span>\n'
+        '      <span class="channel-desc">阿里巴巴/慧聪网</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="bidding" href="/admin/spider?channel=bidding">\n'
-        '      <span class="channel-icon">[Clipboard]</span>\n'
-        '      <span class="channel-title">Bidding</span>\n'
-        '      <span class="channel-desc">Gov/Enterprise procurement</span>\n'
+        '      <span class="channel-icon">📋</span>\n'
+        '      <span class="channel-title">招投标</span>\n'
+        '      <span class="channel-desc">政府/企业采购平台</span>\n'
         '    </a>\n'
         '    <a class="channel-card" data-channel="company_biz" href="/admin/spider?channel=company_biz">\n'
-        '      <span class="channel-icon">[Building]</span>\n'
-        '      <span class="channel-title">Corporate Business</span>\n'
-        '      <span class="channel-desc">Qcc/Tianyancha/Industry disclosure</span>\n'
+        '      <span class="channel-icon">🏢</span>\n'
+        '      <span class="channel-title">企业工商</span>\n'
+        '      <span class="channel-desc">企查查/天眼查/行业信息披露</span>\n'
         '    </a>\n'
         '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[+] New Collection Task</h3>\n'
+        '  <h3>➕ 新建采集任务</h3>\n'
         '  <div class="row">\n'
-        '    <label>Channel Type <select id="task-channel-select" name="channel" data-requires-permission="btn.spider.create">\n'
-        '      <option value="">Please select a channel</option>\n'
-        '      <option value="generic_web">General Web/Forum</option>\n'
-        '      <option value="short_video">Short Video</option>\n'
-        '      <option value="xhs">Little Red Book</option>\n'
-        '      <option value="qa_platform">Q&A Platform</option>\n'
-        '      <option value="b2b_supply">B2B Supply</option>\n'
-        '      <option value="bidding">Bidding</option>\n'
-        '      <option value="company_biz">Corporate Business</option>\n'
+        '    <label>渠道类型 <select id="task-channel-select" name="channel" data-requires-permission="btn.spider.create">\n'
+        '      <option value="">请选择渠道</option>\n'
+        '      <option value="generic_web">通用网页/论坛</option>\n'
+        '      <option value="short_video">短视频</option>\n'
+        '      <option value="xhs">小红书</option>\n'
+        '      <option value="qa_platform">问答平台</option>\n'
+        '      <option value="b2b_supply">供需B2B</option>\n'
+        '      <option value="bidding">招投标</option>\n'
+        '      <option value="company_biz">企业工商</option>\n'
         '    </select></label>\n'
         '  </div>\n'
         '  <form class="row-form" id="task-create-form" data-requires-permission="btn.spider.create" onsubmit="return admin.createSpiderTask(event)">\n'
         '    <input type="hidden" name="channel" id="task-channel-hidden"/>\n'
-        '    <label>Task ID <input type="text" name="job_id" placeholder="e.g. sp_daily_001"/></label>\n'
-        '    <label>Task Name <input type="text" name="task_name" placeholder="Task description"/></label>\n'
-        '    <label>Speed Level (1-5) <input type="number" name="speed_level" value="3" min="1" max="5"/></label>\n'
-        '    <label>Crawl Limit <input type="number" name="max_items" value="500" min="1"/></label>\n'
-        '    <label>Schedule Mode <select name="schedule_mode"><option value="off">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select></label>\n'
+        '    <label>任务ID <input type="text" name="job_id" placeholder="例如 sp_daily_001"/></label>\n'
+        '    <label>任务名称 <input type="text" name="task_name" placeholder="任务描述"/></label>\n'
+        '    <label>速度等级(1-5) <input type="number" name="speed_level" value="3" min="1" max="5"/></label>\n'
+        '    <label>抓取上限 <input type="number" name="max_items" value="500" min="1"/></label>\n'
+        '    <label>调度模式 <select name="schedule_mode"><option value="off">手动</option><option value="hourly">每小时</option><option value="daily">每天</option></select></label>\n'
         '    <label>Cron <input type="text" name="cron" value="*/30 * * * *"/></label>\n'
-        '    <label>Time Range <input type="text" name="time_range" placeholder="e.g. Last 7 days"/></label>\n'
+        '    <label>时间范围 <input type="text" name="time_range" placeholder="例如：最近7天"/></label>\n'
         '    <div id="channel-specific-fields" style="width:100%;margin-top:12px;">\n'
-        '      <span class="muted">Please select a channel type to display custom parameters</span>\n'
+        '      <span class="muted">请选择渠道类型以显示自定义参数</span>\n'
         '    </div>\n'
         '  </form>\n'
         '  <div class="compliance-agreement-block" style="margin-top:16px;padding:16px;border:1px solid #ddd;border-radius:6px;background:#f8f9fa;">\n'
-        '    <h4 style="margin:0 0 12px 0;font-size:15px;">[Scale] Data Collection Compliance Checklist (required before save)</h4>\n'
-        '    <div id="compliance-agreement-text" class="code-out" style="max-height:120px;overflow-y:auto;margin-bottom:12px;">Loading compliance agreement...</div>\n'
+        '    <h4 style="margin:0 0 12px 0;font-size:15px;">⚖ 数据采集合规检查清单（保存前必须勾选）</h4>\n'
+        '    <div id="compliance-agreement-text" class="code-out" style="max-height:120px;overflow-y:auto;margin-bottom:12px;">加载中 合规协议...</div>\n'
         '    <div class="row" style="flex-wrap:wrap;gap:12px;">\n'
-        '      <label><input type="checkbox" name="compliance_agreed" value="true" form="task-create-form"/> I have read and agree to the Data Collection Compliance Agreement</label>\n'
+        '      <label><input type="checkbox" name="compliance_agreed" value="true" form="task-create-form"/> 我已阅读并同意《数据采集合规协议》</label>\n'
         '    </div>\n'
         '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
-        '      <label>Data Purpose <select name="compliance_data_purpose" form="task-create-form">\n'
-        '        <option value="">Please select</option>\n'
-        '        <option value="opportunity">Opportunity Analysis</option>\n'
-        '        <option value="market_research">Market Research</option>\n'
-        '        <option value="bidding_decision">Bidding Decision</option>\n'
-        '        <option value="industry_monitoring">Industry Monitoring</option>\n'
+        '      <label>数据用途 <select name="compliance_data_purpose" form="task-create-form">\n'
+        '        <option value="">请选择</option>\n'
+        '        <option value="opportunity">商机分析</option>\n'
+        '        <option value="market_research">市场调研</option>\n'
+        '        <option value="bidding_decision">招投标决策</option>\n'
+        '        <option value="industry_monitoring">行业监控</option>\n'
         '      </select></label>\n'
-        '      <label>Retention Period <select name="compliance_retention" form="task-create-form">\n'
-        '        <option value="">Please select</option>\n'
-        '        <option value="30d">30 days</option>\n'
-        '        <option value="90d">90 days</option>\n'
-        '        <option value="180d">180 days</option>\n'
-        '        <option value="1y">1 year</option>\n'
+        '      <label>保留周期 <select name="compliance_retention" form="task-create-form">\n'
+        '        <option value="">请选择</option>\n'
+        '        <option value="30d">30天</option>\n'
+        '        <option value="90d">90天</option>\n'
+        '        <option value="180d">180天</option>\n'
+        '        <option value="1y">1年</option>\n'
         '      </select></label>\n'
         '    </div>\n'
         '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
-        '      <label><input type="checkbox" name="compliance_privacy" value="true" form="task-create-form"/> I commit to not collecting personal privacy information (phone/email/ID number)</label>\n'
+        '      <label><input type="checkbox" name="compliance_privacy" value="true" form="task-create-form"/> 我承诺不采集个人隐私信息（手机号/邮箱/身份证号）</label>\n'
         '    </div>\n'
         '    <div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">\n'
-        '      <label><input type="checkbox" name="compliance_site_verified" value="true" form="task-create-form"/> I verify that the collection sites do not violate compliance rules (no forbidden keywords in URLs/titles)</label>\n'
+        '      <label><input type="checkbox" name="compliance_site_verified" value="true" form="task-create-form"/> 我确认采集站点未违反合规规则（URL/标题中不含违禁关键词）</label>\n'
         '    </div>\n'
         '    <div class="row" style="margin-top:12px;">\n'
-        '      <button class="btn btn-primary" type="submit" form="task-create-form" data-requires-permission="btn.spider.create">Save Task</button>\n'
+        '      <button class="btn btn-primary" type="submit" form="task-create-form" data-requires-permission="btn.spider.create">保存任务</button>\n'
         '    </div>\n'
         '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Search] Task Filtering</h3>\n'
+        '  <h3>🔍 任务筛选</h3>\n'
         '  <div class="row">\n'
-        '    <label>Status <select id="filter-status">\n'
-        '      <option value="">All</option>\n'
-        '      <option value="PENDING_APPROVAL">Pending Approval</option>\n'
-        '      <option value="REJECTED">Rejected</option>\n'
-        '      <option value="READY">Ready</option>\n'
-        '      <option value="RUNNING">Running</option>\n'
-        '      <option value="PAUSED">Paused</option>\n'
-        '      <option value="COMPLETED">Completed</option>\n'
-        '      <option value="FAILED">Failed</option>\n'
-        '      <option value="TERMINATED">Terminated</option>\n'
+        '    <label>状态 <select id="filter-status">\n'
+        '      <option value="">全部</option>\n'
+        '      <option value="PENDING_APPROVAL">待审核</option>\n'
+        '      <option value="REJECTED">已拒绝</option>\n'
+        '      <option value="READY">就绪</option>\n'
+        '      <option value="RUNNING">运行中</option>\n'
+        '      <option value="PAUSED">已暂停</option>\n'
+        '      <option value="COMPLETED">已完成</option>\n'
+        '      <option value="FAILED">失败</option>\n'
+        '      <option value="TERMINATED">已终止</option>\n'
         '    </select></label>\n'
-        '    <label>Channel <select id="filter-channel">\n'
-        '      <option value="">All</option>\n'
-        '      <option value="generic_web">General Web/Forum</option>\n'
-        '      <option value="short_video">Short Video</option>\n'
-        '      <option value="xhs">Little Red Book</option>\n'
-        '      <option value="qa_platform">Q&A Platform</option>\n'
-        '      <option value="b2b_supply">B2B Supply</option>\n'
-        '      <option value="bidding">Bidding</option>\n'
-        '      <option value="company_biz">Corporate Business</option>\n'
+        '    <label>渠道 <select id="filter-channel">\n'
+        '      <option value="">全部</option>\n'
+        '      <option value="generic_web">通用网页/论坛</option>\n'
+        '      <option value="short_video">短视频</option>\n'
+        '      <option value="xhs">小红书</option>\n'
+        '      <option value="qa_platform">问答平台</option>\n'
+        '      <option value="b2b_supply">供需B2B</option>\n'
+        '      <option value="bidding">招投标</option>\n'
+        '      <option value="company_biz">企业工商</option>\n'
         '    </select></label>\n'
-        '    <label>Task Name/ID <input type="text" id="filter-keyword" placeholder="Fuzzy search"/></label>\n'
-        '    <button class="btn btn-primary" onclick="admin.loadSpiderFiltered()">Apply Filter</button>\n'
-        '    <button class="btn" onclick="admin.loadSpiderFiltered()">Refresh</button>\n'
+        '    <label>任务名称/ID <input type="text" id="filter-keyword" placeholder="模糊搜索"/></label>\n'
+        '    <button class="btn btn-primary" onclick="admin.loadSpiderFiltered()">应用筛选</button>\n'
+        '    <button class="btn" onclick="admin.loadSpiderFiltered()">刷新</button>\n'
         '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clipboard] Collection Task List</h3>\n'
+        '  <h3>📋 采集任务列表</h3>\n'
         '  <table class="data-table" id="tasks-table">\n'
         '    <thead><tr>\n'
-        '      <th>Task ID</th><th>Channel</th><th>Task Name</th><th>Status</th>\n'
-        '      <th>Count</th><th>Failed</th><th>Next Run</th><th>Actions</th>\n'
+        '      <th>任务ID</th><th>渠道</th><th>任务名称</th><th>状态</th>\n'
+        '      <th>采集数</th><th>失败</th><th>下次运行</th><th>操作</th>\n'
         '    </tr></thead>\n'
-        '    <tbody id="tasks-body"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>\n'
+        '    <tbody id="tasks-body"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Scroll] Crawl Logs</h3>\n'
+        '  <h3>[日志] 爬虫日志</h3>\n'
         '  <div class="row">\n'
-        '    <input type="text" id="log-job-id" placeholder="Enter task/job id"/>\n'
-        '    <button class="btn" onclick="admin.loadSpiderLogs()">View</button>\n'
+        '    <input type="text" id="log-job-id" placeholder="请输入任务/作业ID"/>\n'
+        '    <button class="btn" onclick="admin.loadSpiderLogs()">查看</button>\n'
         '  </div>\n'
-        '  <pre id="logs-out" class="code-out">(empty)</pre>\n'
+        '  <pre id="logs-out" class="code-out">(空)</pre>\n'
         '</section>\n'
         '<script>\n'
         '  (function () {\n'
@@ -484,41 +484,41 @@ def spider_page(session: dict | None = Depends(get_current_admin)):
 def spider_detail_page(job_id: str, session: dict | None = Depends(get_current_admin)):
     body_parts = [
         '<section class="panel task-detail-config">',
-        '  <h3>[Gear] Task Base Config (read-only)</h3>',
+        '  <h3>[配置] 任务基础配置（只读）</h3>',
         '  <div id="detail-config" class="task-detail-config-grid">',
-        '    <span class="muted">Loading task ' + job_id + ' basic config...</span>',
+        '    <span class="muted">加载中 task ' + job_id + ' 基础配置...</span>',
         '  </div>',
         '</section>',
         '<section class="panel task-detail-progress">',
-        '  <h3>[Chart] Collection Progress</h3>',
+        '  <h3>[图表] 采集进度</h3>',
         '  <div id="detail-progress">',
-        '    <span class="muted">Loading collection progress...</span>',
+        '    <span class="muted">加载中 采集进度...</span>',
         '  </div>',
         '</section>',
         '<section class="panel">',
-        '  <h3>[Wrench] Task Actions</h3>',
+        '  <h3>[操作] 任务操作</h3>',
         '  <div class="row">',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runTask(\'' + job_id + '\')">Run Now</button>',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.pause" onclick="admin.pauseTask(\'' + job_id + '\')">Pause</button>',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.resume" onclick="admin.resumeTask(\'' + job_id + '\')">Resume</button>',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.retry" onclick="admin.retryTask(\'' + job_id + '\')">Retry (resume crawl)</button>',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.terminate" onclick="admin.terminateTask(\'' + job_id + '\')">Terminate Task</button>',
-        '    <button class="btn btn-sm btn-danger" data-requires-permission="btn.spider.delete" onclick="admin.deleteTask(\'' + job_id + '\')">Delete Task</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runTask(\'' + job_id + '\')">立即运行</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.pause" onclick="admin.pauseTask(\'' + job_id + '\')">暂停</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.resume" onclick="admin.resumeTask(\'' + job_id + '\')">恢复</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.retry" onclick="admin.retryTask(\'' + job_id + '\')">重试（继续采集）</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.terminate" onclick="admin.terminateTask(\'' + job_id + '\')">终止任务</button>',
+        '    <button class="btn btn-sm btn-danger" data-requires-permission="btn.spider.delete" onclick="admin.deleteTask(\'' + job_id + '\')">删除任务</button>',
         '  </div>',
         '</section>',
         '<section class="panel">',
-        '  <h3>[Memo] Raw Data Collection Details (auto-desi...ensitized)</h3>',
+        '  <h3>[数据] 原始数据采集详情（自动脱敏）</h3>',
         '  <table class="data-table spider-item-table" id="items-table">',
         '    <thead><tr>',
-        '      <th>ID</th><th>Title/Content</th><th>Author</th><th>Phone</th><th>Email</th>',
+        '      <th>ID</th><th>标题/内容</th><th>作者</th><th>电话</th><th>邮箱</th>',
         '    </tr></thead>',
-        '    <tbody id="items-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>',
+        '    <tbody id="items-body"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>',
         '  </table>',
         '  <div class="row" style="margin-top:12px;" id="items-pagination"></div>',
         '</section>',
         '<section class="panel">',
-        '  <h3>[Scroll] Task Run Logs (auto-refresh)</h3>',
-        '  <div id="task-logs" class="spider-logs">(empty)</div>',
+        '  <h3>[日志] 任务运行日志（自动刷新）</h3>',
+        '  <div id="task-logs" class="spider-logs">(空)</div>',
         '</section>',
         '<script>',
         '  (function () {',
@@ -539,37 +539,37 @@ def spider_detail_page(job_id: str, session: dict | None = Depends(get_current_a
 def leads_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel">\n'
-        '  <h3>[Search] Filter</h3>\n'
+        '  <h3>🔍 筛选</h3>\n'
         '  <div class="row">\n'
-        '    <input type="text" id="keyword" placeholder="Keyword (title/customer)"/>\n'
+        '    <input type="text" id="keyword" placeholder="关键词（标题/客户）"/>\n'
         '    <select id="status">\n'
-        '      <option value="">All Statuses</option>\n'
-        '      <option value="PENDING">Pending Review</option>\n'
-        '      <option value="APPROVED">Approved</option>\n'
-        '      <option value="REJECTED">Rejected</option>\n'
+        '      <option value="">全部状态</option>\n'
+        '      <option value="PENDING">待复核</option>\n'
+        '      <option value="APPROVED">已通过</option>\n'
+        '      <option value="REJECTED">已拒绝</option>\n'
         '    </select>\n'
-        '    <button class="btn btn-primary" onclick="admin.loadLeads()">Query</button>\n'
+        '    <button class="btn btn-primary" onclick="admin.loadLeads()">查询</button>\n'
         '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clipboard] Leads List</h3>\n'
+        '  <h3>📋 线索列表</h3>\n'
         '  <table class="data-table">\n'
-        '    <thead><tr><th>ID</th><th>Title</th><th>Customer</th><th>Status</th><th>Actions</th></tr></thead>\n'
-        '    <tbody id="leads-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>ID</th><th>标题</th><th>客户</th><th>状态</th><th>操作</th></tr></thead>\n'
+        '    <tbody id="leads-body"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
         '<section class="panel" data-requires-permission="btn.leads.add_blacklist">\n'
-        '  <h3>[Stop] Blacklist Management</h3>\n'
+        '  <h3>🛑 黑名单管理</h3>\n'
         '  <form class="row-form" onsubmit="return admin.addBlacklist(event)">\n'
-        '    <label>Type <select name="type"><option value="phone">Phone</option><option value="email">Email</option><option value="company_name">Company Name</option><option value="domain">Domain</option></select></label>\n'
-        '    <label>Identifier <input type="text" name="identifier" placeholder="identifier"/></label>\n'
-        '    <label>Reason <input type="text" name="reason" placeholder="e.g. Invalid opportunity"/></label>\n'
-        '    <button class="btn btn-danger" type="submit">Add to Blacklist</button>\n'
+        '    <label>类型 <select name="type"><option value="phone">手机号</option><option value="email">邮箱</option><option value="company_name">公司名</option><option value="domain">域名</option></select></label>\n'
+        '    <label>标识 <input type="text" name="identifier" placeholder="标识内容"/></label>\n'
+        '    <label>原因 <input type="text" name="reason" placeholder="例：无效商机"/></label>\n'
+        '    <button class="btn btn-danger" type="submit">加入黑名单</button>\n'
         '  </form>\n'
         '  <div class="row" style="margin-top:12px;">\n'
-        '    <button class="btn btn-sm" onclick="admin.loadBlacklist()">Load Blacklist</button>\n'
+        '    <button class="btn btn-sm" onclick="admin.loadBlacklist()">加载黑名单</button>\n'
         '  </div>\n'
-        '  <div id="blacklist-body" class="code-out">(click to load)</div>\n'
+        '  <div id="blacklist-body" class="code-out">(点击加载)</div>\n'
         '</section>\n'
     )
     return _render_with_permission("leads", "btn.leads.view", body, session)
@@ -579,24 +579,24 @@ def leads_page(session: dict | None = Depends(get_current_admin)):
 def channels_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel">\n'
-        '  <h3>[+] New Channel Account</h3>\n'
+        '  <h3>[+] 新建渠道账号</h3>\n'
         '  <form class="row-form" data-requires-permission="btn.channels.create" onsubmit="return admin.createAccount(event)">\n'
-        '    <label>Channel <select name="channel">\n'
-        '      <option value="email">Email</option>\n'
-        '      <option value="wechat">WeCom</option>\n'
-        '      <option value="feishu">Feishu</option>\n'
-        '      <option value="dingtalk">DingTalk</option>\n'
+        '    <label>渠道 <select name="channel">\n'
+        '      <option value="email">邮箱</option>\n'
+        '      <option value="wechat">企业微信</option>\n'
+        '      <option value="feishu">飞书</option>\n'
+        '      <option value="dingtalk">钉钉</option>\n'
         '    </select></label>\n'
-        '    <label>Account ID <input type="text" name="account_id" placeholder="biztools_sender_01"/></label>\n'
-        '    <label>Username <input type="text" name="username" placeholder="Display name"/></label>\n'
-        '    <label>Password (encrypted, not echoed) <input type="password" name="password" required/></label>\n'
-        '    <label>Daily Send Limit <input type="number" name="quota" value="500" min="1"/></label>\n'
-        '    <button class="btn btn-primary" type="submit">Save</button>\n'
+        '    <label>账号ID <input type="text" name="account_id" placeholder="biztools_sender_01"/></label>\n'
+        '    <label>用户名 <input type="text" name="username" placeholder="显示名称"/></label>\n'
+        '    <label>密码（加密存储，不回显） <input type="password" name="password" required/></label>\n'
+        '    <label>每日发送上限 <input type="number" name="quota" value="500" min="1"/></label>\n'
+        '    <button class="btn btn-primary" type="submit">保存</button>\n'
         '  </form>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clipboard] Channel Accounts (keys/passwords always desensitized)</h3>\n'
-        '  <div id="channels-wrap"><div class="empty-inline">Loading...</div></div>\n'
+        '  <h3>📋 渠道账号列表（密钥/密码始终脱敏）</h3>\n'
+        '  <div id="channels-wrap"><div class="empty-inline">加载中...</div></div>\n'
         '</section>\n'
     )
     return _render_with_permission("channels", "btn.channels.view", body, session)
@@ -606,55 +606,55 @@ def channels_page(session: dict | None = Depends(get_current_admin)):
 def sales_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel">\n'
-        '  <h3>[Briefcase] Sales Personnel</h3>\n'
+        '  <h3>[人员] 销售人员</h3>\n'
         '  <form class="row-form" data-requires-permission="btn.sales.create" onsubmit="return admin.upsertPerson(event)">\n'
-        '    <label>Sales ID <input type="text" name="sales_id" placeholder="s_001"/></label>\n'
-        '    <label>Name <input type="text" name="name" placeholder="John Doe"/></label>\n'
-        '    <label>Industry (comma-separated) <input type="text" name="industries" placeholder="Manufacturing,E-commerce"/></label>\n'
-        '    <label>Weight <input type="number" step="0.1" name="weight" value="1.0"/></label>\n'
-        '    <label>Phone (desensitized display) <input type="text" name="phone" placeholder="Stored only, not echoed in plain"/></label>\n'
-        '    <label>Email (desensitized display) <input type="text" name="email" placeholder="a@b.com"/></label>\n'
-        '    <button class="btn btn-primary" type="submit">Save</button>\n'
+        '    <label>销售ID <input type="text" name="sales_id" placeholder="s_001"/></label>\n'
+        '    <label>姓名 <input type="text" name="name" placeholder="张三"/></label>\n'
+        '    <label>行业（逗号分隔） <input type="text" name="industries" placeholder="制造业,电商"/></label>\n'
+        '    <label>权重 <input type="number" step="0.1" name="weight" value="1.0"/></label>\n'
+        '    <label>手机（显示脱敏） <input type="text" name="phone" placeholder="仅存储，不回显"/></label>\n'
+        '    <label>邮箱（显示脱敏） <input type="text" name="email" placeholder="a@b.com"/></label>\n'
+        '    <button class="btn btn-primary" type="submit">保存</button>\n'
         '  </form>\n'
         '  <table class="data-table">\n'
-        '    <thead><tr><th>ID</th><th>Name</th><th>Industry</th><th>Weight</th><th>Phone</th><th>Email</th></tr></thead>\n'
-        '    <tbody id="persons-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>ID</th><th>姓名</th><th>行业</th><th>权重</th><th>手机</th><th>邮箱</th></tr></thead>\n'
+        '    <tbody id="persons-body"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Target] Opportunity Assignment</h3>\n'
+        '  <h3>[分配] 商机分配</h3>\n'
         '  <form class="row-form" data-requires-permission="btn.sales.assign" onsubmit="return admin.doAssign(event)">\n'
-        '    <label>Opportunity ID <input type="text" name="opportunity_id" placeholder="opp_001"/></label>\n'
-        '    <label>Customer <input type="text" name="customer" placeholder="ACME Inc"/></label>\n'
-        '    <label>Sales <input type="text" name="sales_id" placeholder="empty=auto"/></label>\n'
-        '    <button class="btn btn-primary" type="submit">Assign</button>\n'
+        '    <label>商机ID <input type="text" name="opportunity_id" placeholder="opp_001"/></label>\n'
+        '    <label>客户 <input type="text" name="customer" placeholder="ACME公司"/></label>\n'
+        '    <label>销售 <input type="text" name="sales_id" placeholder="留空=自动分配"/></label>\n'
+        '    <button class="btn btn-primary" type="submit">分配</button>\n'
         '  </form>\n'
         '  <table class="data-table">\n'
-        '    <thead><tr><th>Assign ID</th><th>Opportunity</th><th>Sales</th><th>Status</th><th>Time</th></tr></thead>\n'
-        '    <tbody id="assignments-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>分配ID</th><th>商机</th><th>销售人员</th><th>状态</th><th>时间</th></tr></thead>\n'
+        '    <tbody id="assignments-body"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Phone] Follow-up Records</h3>\n'
+        '  <h3>[电话] 跟进记录</h3>\n'
         '  <form class="row-form" data-requires-permission="btn.sales.record_followup" onsubmit="return admin.recordFollowup(event)">\n'
-        '    <label>Opportunity ID <input type="text" name="opportunity_id"/></label>\n'
-        '    <label>Channel <select name="channel"><option>phone</option><option>email</option><option>meeting</option><option>wechat</option></select></label>\n'
-        '    <label>Content <input type="text" name="content" placeholder="Brief call notes"/></label>\n'
-        '    <label>Sales ID <input type="text" name="sales_id" placeholder="empty=current user"/></label>\n'
-        '    <button class="btn btn-primary" type="submit">Record</button>\n'
+        '    <label>商机ID <input type="text" name="opportunity_id"/></label>\n'
+        '    <label>渠道 <select name="channel"><option>电话</option><option>邮箱</option><option>会议</option><option>微信</option></select></label>\n'
+        '    <label>内容 <input type="text" name="content" placeholder="通话简要记录"/></label>\n'
+        '    <label>销售ID <input type="text" name="sales_id" placeholder="留空=当前用户"/></label>\n'
+        '    <button class="btn btn-primary" type="submit">记录</button>\n'
         '  </form>\n'
         '  <table class="data-table">\n'
-        '    <thead><tr><th>ID</th><th>Opportunity</th><th>Channel</th><th>Content</th><th>Operator</th><th>Time</th></tr></thead>\n'
-        '    <tbody id="followups-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>ID</th><th>商机</th><th>渠道</th><th>内容</th><th>操作人</th><th>时间</th></tr></thead>\n'
+        '    <tbody id="followups-body"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clock] Overdue Follow-ups</h3>\n'
+        '  <h3>[提醒] 逾期跟进</h3>\n'
         '  <table class="data-table">\n'
-        '    <thead><tr><th>Opportunity</th><th>Sales</th><th>Last</th><th>Hint</th></tr></thead>\n'
-        '    <tbody id="overdue-body"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>商机</th><th>销售人员</th><th>上次跟进</th><th>提示</th></tr></thead>\n'
+        '    <tbody id="overdue-body"><tr><td colspan="4" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
-        '  <div class="row" style="margin-top:12px;"><button class="btn btn-sm" onclick="admin.loadOverdue()">Refresh</button></div>\n'
+        '  <div class="row" style="margin-top:12px;"><button class="btn btn-sm" onclick="admin.loadOverdue()">刷新</button></div>\n'
         '</section>\n'
     )
     return _render_with_permission("sales", "btn.sales.view", body, session)
@@ -664,40 +664,40 @@ def sales_page(session: dict | None = Depends(get_current_admin)):
 def audit_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel">\n'
-        '  <h3>[Search] Log Filter</h3>\n'
+        '  <h3>[搜索] 日志筛选</h3>\n'
         '  <div class="row">\n'
-        '    <label>Role <select id="f-role">\n'
-        '      <option value="">All</option>\n'
-        '      <option value="super_admin">Super Admin</option>\n'
-        '      <option value="ops">Ops</option>\n'
-        '      <option value="sales">Sales</option>\n'
-        '      <option value="compliance">Compliance</option>\n'
+        '    <label>角色 <select id="f-role">\n'
+        '      <option value="">全部</option>\n'
+        '      <option value="super_admin">超级管理员</option>\n'
+        '      <option value="ops">运维</option>\n'
+        '      <option value="sales">销售</option>\n'
+        '      <option value="compliance">合规</option>\n'
         '    </select></label>\n'
-        '    <label>Operation Type <select id="f-op">\n'
-        '      <option value="">All</option>\n'
-        '      <option>READ</option><option>CREATE</option><option>UPDATE</option>\n'
-        '      <option>DELETE</option><option>VIEW_SECRET</option><option>EXPORT</option>\n'
-        '      <option>LOGIN</option><option>LOGOUT</option>\n'
+        '    <label>操作类型 <select id="f-op">\n'
+        '      <option value="">全部</option>\n'
+        '      <option>读取</option><option>创建</option><option>更新</option>\n'
+        '      <option>删除</option><option>查看密钥</option><option>导出</option>\n'
+        '      <option>登录</option><option>登出</option>\n'
         '    </select></label>\n'
-        '    <label>Keyword <input type="text" id="f-keyword" placeholder="username / path / content"/></label>\n'
-        '    <button class="btn btn-primary" onclick="admin.loadAuditLogsEnhanced()">Query</button>\n'
-        '    <button class="btn btn-sm" data-requires-permission="btn.audit.export" onclick="admin.exportAuditLogs()">Export CSV</button>\n'
+        '    <label>关键词 <input type="text" id="f-keyword" placeholder="用户名 / 路径 / 内容"/></label>\n'
+        '    <button class="btn btn-primary" onclick="admin.loadAuditLogsEnhanced()">查询</button>\n'
+        '    <button class="btn btn-sm" data-requires-permission="btn.audit.export" onclick="admin.exportAuditLogs()">导出CSV</button>\n'
         '  </div>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clipboard] Log List</h3>\n'
+        '  <h3>📋 日志列表</h3>\n'
         '  <table class="data-table" id="audit-table">\n'
         '    <thead><tr>\n'
-        '      <th>Time</th><th>User</th><th>Role</th><th>IP</th><th>Operation</th>\n'
-        '      <th>Path/Content</th><th>Status</th><th>Duration</th><th>trace_id</th>\n'
+        '      <th>时间</th><th>用户</th><th>角色</th><th>IP</th><th>操作</th>\n'
+        '      <th>路径/内容</th><th>状态</th><th>耗时</th><th>trace_id</th>\n'
         '    </tr></thead>\n'
-        '    <tbody id="audit-body"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>\n'
+        '    <tbody id="audit-body"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '  <div class="row pagination">\n'
         '    <span id="audit-summary" class="muted">-</span>\n'
-        '    <button class="btn btn-sm" onclick="admin.prevAuditPage()">Prev</button>\n'
-        '    <span id="audit-page-info">Page 1</span>\n'
-        '    <button class="btn btn-sm" onclick="admin.nextAuditPage()">Next</button>\n'
+        '    <button class="btn btn-sm" onclick="admin.prevAuditPage()">上一页</button>\n'
+        '    <span id="audit-page-info">第 1 页</span>\n'
+        '    <button class="btn btn-sm" onclick="admin.nextAuditPage()">下一页</button>\n'
         '  </div>\n'
         '</section>\n'
     )
@@ -711,25 +711,25 @@ def audit_page(session: dict | None = Depends(get_current_admin)):
 def accounts_page(session: dict | None = Depends(get_current_admin)):
     body = (
         '<section class="panel">\n'
-        '  <h3>[+] New Account</h3>\n'
+        '  <h3>[+] 新建账号</h3>\n'
         '  <form class="row-form" onsubmit="return admin.createAdminAccount(event)">\n'
-        '    <label>Account <input type="text" name="username" required placeholder="New username"/></label>\n'
-        '    <label>Role <select name="role">\n'
-        '      <option value="ops">Ops</option>\n'
-        '      <option value="sales">Sales</option>\n'
-        '      <option value="compliance">Compliance</option>\n'
-        '      <option value="super_admin">Super Admin</option>\n'
+        '    <label>账号 <input type="text" name="username" required placeholder="新用户名"/></label>\n'
+        '    <label>角色 <select name="role">\n'
+        '      <option value="ops">运维</option>\n'
+        '      <option value="sales">销售</option>\n'
+        '      <option value="compliance">合规</option>\n'
+        '      <option value="super_admin">超级管理员</option>\n'
         '    </select></label>\n'
-        '    <label>Initial Password <input type="password" name="password_plain" required/></label>\n'
-        '    <button class="btn btn-primary" type="submit">Create</button>\n'
+        '    <label>初始密码 <input type="password" name="password_plain" required/></label>\n'
+        '    <button class="btn btn-primary" type="submit">创建</button>\n'
         '  </form>\n'
-        '  <p class="muted">Note: After creation, CREATE_ACCOUNT audit will be recorded in DB. Accounts managed in-process dict; process restart resets to .env config.</p>\n'
+        '  <p class="muted">注意：创建后将记录一条【新建账号】审计到数据库。账号在进程字典中管理；进程重启后恢复到 .env 配置。</p>\n'
         '</section>\n'
         '<section class="panel">\n'
-        '  <h3>[Clipboard] Account List</h3>\n'
+        '  <h3>📋 账号列表</h3>\n'
         '  <table class="data-table" id="accounts-table">\n'
-        '    <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Created At</th><th>Actions</th></tr></thead>\n'
-        '    <tbody id="accounts-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>\n'
+        '    <thead><tr><th>账号</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>\n'
+        '    <tbody id="accounts-body"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>\n'
         '  </table>\n'
         '</section>\n'
     )
@@ -742,23 +742,23 @@ def accounts_page(session: dict | None = Depends(get_current_admin)):
 @router.get("/403", response_class=HTMLResponse)
 def page_403(session: dict | None = Depends(get_current_admin)):
     body = _forbidden_body("403", missing_perm="(checked on page access)")
-    return HTMLResponse(_layout_v2("Permission Denied", "403", body, session))
+    return HTMLResponse(_layout_v2("权限不足", "403", body, session))
 
 
 @router.get("/empty", response_class=HTMLResponse)
 def page_empty(session: dict | None = Depends(get_current_admin)):
     body = (
         '<div class="empty-state">\n'
-        '  <div class="empty-state-icon">[Mailbox]</div>\n'
-        '  <div class="empty-state-title">Nothing here</div>\n'
-        '  <div class="empty-state-desc">This is an example of an empty state component. Similar content will appear when data is not ready.</div>\n'
+        '  <div class="empty-state-icon">📭</div>\n'
+        '  <div class="empty-state-title">暂无内容</div>\n'
+        '  <div class="empty-state-desc">这是空状态组件示例。当数据尚未准备好时会显示类似内容。</div>\n'
         '  <div class="empty-state-actions">\n'
-        '    <a class="btn btn-primary" href="/admin/dashboard">Back to Dashboard</a>\n'
+        '    <a class="btn btn-primary" href="/admin/dashboard">返回仪表板</a>\n'
         '  </div>\n'
         '</div>\n'
         '<section class="panel" style="margin-top:24px;">\n'
-        '  <h3>[Repeat] Loading State Example</h3>\n'
-        '  <div class="loading-state" id="loading-demo"><div class="spinner"></div> <span>Loading data...</span></div>\n'
+        '  <h3>[重复] 加载中 状态示例</h3>\n'
+        '  <div class="loading-state" id="loading-demo"><div class="spinner"></div> <span>数据加载中...</span></div>\n'
         '</section>\n'
     )
     return _render_with_permission("empty", "btn.dashboard.view", body, session)
@@ -772,51 +772,51 @@ def compliance_review_page(session: dict | None = Depends(get_current_admin)):
     body_parts = [
         # 待审核列表
         '<section class="panel">',
-        '  <h3>[Scale] Pending Approval Tasks</h3>',
+        '  <h3>⚖ 待审核任务</h3>',
         '  <div class="row">',
-        '    <label>Channel <select id="pending-channel-filter">',
-        '      <option value="">All</option>',
-        '      <option value="short_video">Short Video</option>',
-        '      <option value="xhs">Little Red Book</option>',
-        '      <option value="b2b_supply">B2B Supply</option>',
-        '      <option value="generic_web">General Web</option>',
-        '      <option value="qa_platform">Q&A Platform</option>',
-        '      <option value="bidding">Bidding</option>',
-        '      <option value="company_biz">Corporate Business</option>',
+        '    <label>渠道 <select id="pending-channel-filter">',
+        '      <option value="">全部</option>',
+        '      <option value="short_video">短视频</option>',
+        '      <option value="xhs">小红书</option>',
+        '      <option value="b2b_supply">供需B2B</option>',
+        '      <option value="generic_web">通用网页</option>',
+        '      <option value="qa_platform">问答平台</option>',
+        '      <option value="bidding">招投标</option>',
+        '      <option value="company_biz">企业工商</option>',
         '    </select></label>',
-        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.review" onclick="admin.loadPendingTasks()">Load Pending</button>',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.review" onclick="admin.loadPendingTasks()">加载待审核</button>',
         '  </div>',
         '  <table class="data-table" id="pending-tasks-table">',
         '    <thead><tr>',
-        '      <th>Task ID</th><th>Channel</th><th>Task Name</th><th>Submitter</th>',
-        '      <th>Submission Time</th><th>Data Purpose</th><th>Retention</th><th>Actions</th>',
+        '      <th>任务ID</th><th>渠道</th><th>任务名称</th><th>提交人</th>',
+        '      <th>提交时间</th><th>数据用途</th><th>保留周期</th><th>操作</th>',
         '    </tr></thead>',
-        '    <tbody id="pending-tasks-body"><tr><td colspan="8" class="empty">Loading pending approval tasks...</td></tr></tbody>',
+        '    <tbody id="pending-tasks-body"><tr><td colspan="8" class="empty">待审核任务加载中...</td></tr></tbody>',
         '  </table>',
         '</section>',
         # 驳回弹窗（隐藏，点击驳回按钮显示）
         '<div id="reject-modal" class="modal" style="display:none;">',
         '  <div class="modal-content" style="max-width:500px;">',
-        '    <h3 style="margin-top:0;">Reject Task</h3>',
-        '    <textarea id="reject-reason" rows="5" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="Please enter the reason for rejection (required)"></textarea>',
+        '    <h3 style="margin-top:0;">驳回任务</h3>',
+        '    <textarea id="reject-reason" rows="5" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="请输入驳回原因（必填）"></textarea>',
         '    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;">',
-        '      <button class="btn" onclick="admin.closeRejectModal()">Cancel</button>',
-        '      <button class="btn btn-danger" data-requires-permission="btn.compliance.reject" onclick="admin.submitReject()">Confirm Rejection</button>',
+        '      <button class="btn" onclick="admin.closeRejectModal()">取消</button>',
+        '      <button class="btn btn-danger" data-requires-permission="btn.compliance.reject" onclick="admin.submitReject()">确认驳回</button>',
         '    </div>',
         '  </div>',
         '</div>',
         # 已审核记录
         '<section class="panel">',
-        '  <h3>[Clipboard] Audit History</h3>',
+        '  <h3>📋 审核记录</h3>',
         '  <div class="row">',
-        '    <button class="btn" data-requires-permission="btn.compliance.review" onclick="admin.loadApprovalHistory()">Load Approval History</button>',
+        '    <button class="btn" data-requires-permission="btn.compliance.review" onclick="admin.loadApprovalHistory()">加载审核记录</button>',
         '  </div>',
         '  <table class="data-table" id="approval-history-table">',
         '    <thead><tr>',
-        '      <th>Task ID</th><th>Task Name</th><th>Channel</th><th>Submitter</th>',
-        '      <th>Reviewer</th><th>Review Time</th><th>Decision</th><th>Rejection Reason</th>',
+        '      <th>任务ID</th><th>任务名称</th><th>渠道</th><th>提交人</th>',
+        '      <th>审核人</th><th>审核时间</th><th>决策</th><th>拒绝原因</th>',
         '    </tr></thead>',
-        '    <tbody id="approval-history-body"><tr><td colspan="8" class="empty">Click the button to load approval history...</td></tr></tbody>',
+        '    <tbody id="approval-history-body"><tr><td colspan="8" class="empty">点击按钮加载审核记录...</td></tr></tbody>',
         '  </table>',
         '</section>',
         # 自动初始化
@@ -840,40 +840,40 @@ def compliance_config_page(session: dict | None = Depends(get_current_admin)):
     body_parts = [
         # 渠道审批规则
         '<section class="panel">',
-        '  <h3>[Gear] Channel Approval Rules</h3>',
-        '  <p class="muted">High-risk channels require compliance officer approval; low-risk channels can be configured to skip review.</p>',
+        '  <h3>⚙ 渠道审批规则</h3>',
+        '  <p class="muted">高风险渠道需要合规官审核；低风险渠道可配置为跳过审核。</p>',
         '  <table class="data-table" id="channel-rules-table">',
         '    <thead><tr>',
-        '      <th>Channel</th><th>Risk Level</th><th>Requires Approval</th><th>Actions</th>',
+        '      <th>渠道</th><th>风险等级</th><th>是否需审核</th><th>操作</th>',
         '    </tr></thead>',
-        '    <tbody id="channel-rules-body"><tr><td colspan="4" class="empty">Loading channel rules...</td></tr></tbody>',
+        '    <tbody id="channel-rules-body"><tr><td colspan="4" class="empty">渠道规则加载中...</td></tr></tbody>',
         '  </table>',
         '</section>',
         # 合规协议文本
         '<section class="panel">',
-        '  <h3>[File] Compliance Agreement Text</h3>',
-        '  <p class="muted">This text will be displayed on the task creation page; the submitter must check it.</p>',
-        '  <textarea id="agreement-text-edit" rows="12" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="Loading compliance agreement text..."></textarea>',
+        '  <h3>📄 数据采集合规协议文本</h3>',
+        '  <p class="muted">该文本将展示在爬虫任务创建页面；提交人必须勾选同意。</p>',
+        '  <textarea id="agreement-text-edit" rows="12" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="合规协议文本加载中..."></textarea>',
         '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
-        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveAgreementText()">Save Agreement</button>',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveAgreementText()">保存协议文本</button>',
         '  </div>',
         '</section>',
         # 留存周期选项
         '<section class="panel">',
-        '  <h3>[Calendar] Retention Period Options</h3>',
-        '  <p class="muted">Comma-separated values, e.g.: 30d,90d,180d,1y</p>',
+        '  <h3>📅 数据留存周期选项</h3>',
+        '  <p class="muted">逗号分隔的值，例如：30天,90天,180天,1年</p>',
         '  <input type="text" id="retention-options-edit" style="width:100%;padding:8px;box-sizing:border-box;" placeholder="30d,90d,180d,1y"/>',
         '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
-        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveRetentionOptions()">Save Retention Options</button>',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveRetentionOptions()">保存留存选项</button>',
         '  </div>',
         '</section>',
         # 违规关键词黑名单
         '<section class="panel">',
-        '  <h3>[Ban] Forbidden Keyword Blacklist</h3>',
-        '  <p class="muted">Keywords included in task parameters (title, keywords, URL, etc.) will block task creation. Comma-separated values.</p>',
-        '  <textarea id="forbidden-keywords-edit" rows="6" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="phone,email,id card,..."></textarea>',
+        '  <h3>🚫 违禁关键词黑名单</h3>',
+        '  <p class="muted">包含在任务参数（标题、关键词、URL等）中的这些关键词将阻止任务创建。请使用逗号分隔。</p>',
+        '  <textarea id="forbidden-keywords-edit" rows="6" style="width:100%;font-family:monospace;padding:8px;box-sizing:border-box;" placeholder="手机,邮箱,身份证号..."></textarea>',
         '  <div class="row" style="justify-content:flex-end;margin-top:12px;">',
-        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveForbiddenKeywords()">Save Blacklist</button>',
+        '    <button class="btn btn-primary" data-requires-permission="btn.compliance.config" onclick="admin.saveForbiddenKeywords()">保存黑名单</button>',
         '  </div>',
         '</section>',
         # 自动加载配置
@@ -896,16 +896,16 @@ def compliance_config_page(session: dict | None = Depends(get_current_admin)):
 def notifications_page(session: dict | None = Depends(get_current_admin)):
     body_parts = [
         '<section class="panel">',
-        '  <h3>[Bell] Recent Notifications</h3>',
+        '  <h3>[铃铛] 最近通知</h3>',
         '  <div class="row" style="gap:8px;">',
-        '    <button class="btn btn-sm" onclick="admin.loadNotificationsList()">Refresh</button>',
-        '    <button class="btn btn-sm" data-requires-permission="btn.compliance.notification" onclick="admin.markAllNotificationsRead()">Mark All Read</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadNotificationsList()">刷新</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.compliance.notification" onclick="admin.markAllNotificationsRead()">全部标记已读</button>',
         '  </div>',
         '  <table class="data-table" id="notifications-table">',
         '    <thead><tr>',
-        '      <th>Time</th><th>Type</th><th>Title</th><th>Content</th><th>Status</th><th>Actions</th>',
+        '      <th>时间</th><th>类型</th><th>标题</th><th>内容</th><th>状态</th><th>操作</th>',
         '    </tr></thead>',
-        '    <tbody id="notifications-body"><tr><td colspan="6" class="empty">Loading notifications...</td></tr></tbody>',
+        '    <tbody id="notifications-body"><tr><td colspan="6" class="empty">通知加载中...</td></tr></tbody>',
         '  </table>',
         '</section>',
         '<script>',
@@ -928,43 +928,43 @@ def data_center_dashboard_page(session: dict | None = Depends(get_current_admin)
     body_parts = [
         # 1) 顶部核心指标卡
         '<section class="stats-grid" id="dc-summary-grid">',
-        '  <div class="stat-card"><div class="label">[Sun] Today Added</div><div class="value" id="v-today-added">0</div><div class="sub" id="v-trend">—</div></div>',
-        '  <div class="stat-card"><div class="label">[Folder] Total Leads</div><div class="value" id="v-total-leads">0</div></div>',
-        '  <div class="stat-card"><div class="label">[Star] High Intent</div><div class="value" id="v-high-intent">0</div></div>',
-        '  <div class="stat-card"><div class="label">[User] Pending Followup</div><div class="value" id="v-pending-followup">0</div></div>',
-        '  <div class="stat-card"><div class="label">[Check] Closed/Won</div><div class="value" id="v-won">0</div></div>',
+        '  <div class="stat-card"><div class="label">☀ 今日新增</div><div class="value" id="v-today-added">0</div><div class="sub" id="v-trend">—</div></div>',
+        '  <div class="stat-card"><div class="label">📁 商机总数</div><div class="value" id="v-total-leads">0</div></div>',
+        '  <div class="stat-card"><div class="label">⭐ 高意向</div><div class="value" id="v-high-intent">0</div></div>',
+        '  <div class="stat-card"><div class="label">👤 待跟进</div><div class="value" id="v-pending-followup">0</div></div>',
+        '  <div class="stat-card"><div class="label">✅ 已成交</div><div class="value" id="v-won">0</div></div>',
         '</section>',
 
         # 2) 6 阶段漏斗图
         '<section class="panel">',
-        '  <h3>[Chart] Full-Link Funnel (6 Stages)</h3>',
+        '  <h3>[图表] 全链路漏斗（六阶段）</h3>',
         '  <div class="row" style="gap:8px;margin-bottom:12px;">',
-        '    <button class="btn btn-sm" onclick="admin.loadFunnelChart()">Refresh Funnel</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadFunnelChart()">刷新漏斗</button>',
         '  </div>',
-        '  <div id="funnel-chart" class="funnel-chart"><div class="empty-inline">Loading funnel data...</div></div>',
+        '  <div id="funnel-chart" class="funnel-chart"><div class="empty-inline">漏斗数据加载中...</div></div>',
         '</section>',
 
         # 3) 6 阶段快速入口卡片
         '<section class="panel">',
-        '  <h3>[Folder] 6 Stage Quick Entry</h3>',
+        '  <h3>[文件夹] 六阶段快速入口</h3>',
         '  <div class="channel-cards" id="stage-cards">',
         '    <a class="channel-card" href="/admin/data_center/collection">',
-        '      <span class="channel-icon">[Spider]</span><span class="channel-title">Collection Stage</span><span class="channel-desc">Crawled tasks & items</span>',
+        '      <span class="channel-icon">[爬虫]</span><span class="channel-title">采集阶段</span><span class="channel-desc">爬虫任务与抓取条目</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/cleaning">',
-        '      <span class="channel-icon">[Wand]</span><span class="channel-title">Cleaning Stage</span><span class="channel-desc">Structured, valid leads</span>',
+        '      <span class="channel-icon">[清洗]</span><span class="channel-title">清洗结构化</span><span class="channel-desc">结构化、校验后的商机</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/compliance">',
-        '      <span class="channel-icon">[Shield]</span><span class="channel-title">Compliance Stage</span><span class="channel-desc">PII detection, risk score</span>',
+        '      <span class="channel-icon">[合规]</span><span class="channel-title">合规校验</span><span class="channel-desc">敏感信息检测 + 风险评分</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/grading">',
-        '      <span class="channel-icon">[Star]</span><span class="channel-title">Grading Stage</span><span class="channel-desc">A/B/C/D grade + score</span>',
+        '      <span class="channel-icon">[分级]</span><span class="channel-title">商机分级</span><span class="channel-desc">A/B/C/D 等级 + 综合评分</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/outreach">',
-        '      <span class="channel-icon">[Send]</span><span class="channel-title">Outreach Stage</span><span class="channel-desc">Email/IM sends + responses</span>',
+        '      <span class="channel-icon">[触达]</span><span class="channel-title">客户触达</span><span class="channel-desc">邮件/IM 发送 + 响应追踪</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/sales">',
-        '      <span class="channel-icon">[Money]</span><span class="channel-title">Sales Closing</span><span class="channel-desc">Followups, won/lost deals</span>',
+        '      <span class="channel-icon">[成交]</span><span class="channel-title">销售闭环</span><span class="channel-desc">跟进记录、成交/流失</span>',
         '    </a>',
         '  </div>',
         '</section>',
@@ -973,24 +973,24 @@ def data_center_dashboard_page(session: dict | None = Depends(get_current_admin)
         '<section class="panel">',
         '  <div class="row" style="gap:24px;flex-wrap:wrap;">',
         '    <div style="flex:1;min-width:320px;">',
-        '      <h3>[Chart] Channel Distribution</h3>',
-        '      <div id="channel-distribution" class="distribution-chart"><div class="empty-inline">Loading...</div></div>',
+        '      <h3>[图表] 渠道分布</h3>',
+        '      <div id="channel-distribution" class="distribution-chart"><div class="empty-inline">加载中...</div></div>',
         '    </div>',
         '    <div style="flex:1;min-width:320px;">',
-        '      <h3>[Chart] Grade Distribution</h3>',
-        '      <div id="grade-distribution" class="distribution-chart"><div class="empty-inline">Loading...</div></div>',
+        '      <h3>[图表] 等级分布</h3>',
+        '      <div id="grade-distribution" class="distribution-chart"><div class="empty-inline">加载中...</div></div>',
         '    </div>',
         '  </div>',
         '</section>',
 
         # 5) 近 7 天趋势折线图
         '<section class="panel">',
-        '  <h3>[Chart] 7-Day Trend (Leads / Won)</h3>',
+        '  <h3>[图表] 近 7 天趋势（商机线索 / 成交）</h3>',
         '  <div class="row" style="gap:8px;margin-bottom:12px;">',
-        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'leads\')">Leads Trend</button>',
-        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'won\')">Won Trend</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'leads\')">商机趋势</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'won\')">成交趋势</button>',
         '  </div>',
-        '  <div id="trend-chart" class="trend-chart"><div class="empty-inline">Loading trend data...</div></div>',
+        '  <div id="trend-chart" class="trend-chart"><div class="empty-inline">趋势数据加载中...</div></div>',
         '</section>',
 
         # 页面加载脚本
@@ -1015,29 +1015,29 @@ def _stage_detail_page_body(stage_key: str, stage_title: str, stage_desc: str,
     body_parts = [
         # 阶段汇总指标
         '<section class="stats-grid" id="' + body_id + '-stats">',
-        '  <div class="stat-card"><div class="label">[Folder] Total Items</div><div class="value" id="' + body_id + '-total">0</div></div>',
-        '  <div class="stat-card"><div class="label">[Check] Passed/Valid</div><div class="value" id="' + body_id + '-valid">0</div></div>',
-        '  <div class="stat-card"><div class="label">[Alert] Exceptions</div><div class="value" id="' + body_id + '-exception">0</div></div>',
-        '  <div class="stat-card"><div class="label">[Clock] Recent 24h</div><div class="value" id="' + body_id + '-recent">0</div></div>',
+        '  <div class="stat-card"><div class="label">📁 条目总数</div><div class="value" id="' + body_id + '-total">0</div></div>',
+        '  <div class="stat-card"><div class="label">✅ 已通过/有效</div><div class="value" id="' + body_id + '-valid">0</div></div>',
+        '  <div class="stat-card"><div class="label">⚠ 异常数</div><div class="value" id="' + body_id + '-exception">0</div></div>',
+        '  <div class="stat-card"><div class="label">🕓 近24小时新增</div><div class="value" id="' + body_id + '-recent">0</div></div>',
         '</section>',
         # 筛选栏
         '<section class="panel">',
-        '  <h3>[Filter] ' + stage_title + ' — ' + stage_desc + '</h3>',
+        '  <h3>🔍 筛选：' + stage_title + ' — ' + stage_desc + '</h3>',
         '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
-        '    <label>Status <select id="' + body_id + '-filter-status">',
-        '      <option value="">All</option><option value="APPROVED">Approved</option><option value="PENDING">Pending</option><option value="REJECTED">Rejected</option>',
+        '    <label>状态 <select id="' + body_id + '-filter-status">',
+        '      <option value="">全部</option><option value="APPROVED">已通过</option><option value="PENDING">待处理</option><option value="REJECTED">已拒绝</option>',
         '    </select></label>',
-        '    <label>Channel <select id="' + body_id + '-filter-channel">',
-        '      <option value="">All</option><option value="generic_web">General Web</option><option value="short_video">Short Video</option><option value="xhs">Little Red Book</option><option value="qa_platform">Q&A Platform</option><option value="b2b_supply">B2B Supply</option><option value="bidding">Bidding</option><option value="company_biz">Corporate</option>',
+        '    <label>渠道 <select id="' + body_id + '-filter-channel">',
+        '      <option value="">全部</option><option value="generic_web">通用网页</option><option value="short_video">短视频</option><option value="xhs">小红书</option><option value="qa_platform">问答平台</option><option value="b2b_supply">供需B2B</option><option value="bidding">招投标</option><option value="company_biz">企业工商</option>',
         '    </select></label>',
-        '    <label>Keyword <input type="text" id="' + body_id + '-filter-keyword" placeholder="Search..."/></label>',
-        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Apply</button>',
-        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Refresh</button>',
+        '    <label>关键词 <input type="text" id="' + body_id + '-filter-keyword" placeholder="输入关键词搜索..."/></label>',
+        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">应用</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">刷新</button>',
         '  </div>',
         '</section>',
         # T22: 阶段操作工具栏
         '<section class="panel" data-stage="' + stage_key + '">',
-        '  <h3>[Manual Ops] 阶段手工管控 手工操作</h3>',
+        '  <h3>🛠 阶段手工管控</h3>',
         '  <div class="row" data-stage-actions="' + stage_key + '" style="gap:8px;flex-wrap:wrap;">',
         '  </div>',
         '</section>',
@@ -1045,9 +1045,9 @@ def _stage_detail_page_body(stage_key: str, stage_title: str, stage_desc: str,
         '<section class="panel">',
         '  <table class="data-table" id="' + body_id + '-table">',
         '    <thead><tr>',
-        '      ' + "".join(["<th>" + h + "</th>" for h in table_headers]) + '<th>Actions</th>',
+        '      ' + "".join(["<th>" + h + "</th>" for h in table_headers]) + '<th>操作</th>',
         '    </tr></thead>',
-        '    <tbody id="' + body_id + '-body"><tr><td colspan="' + str(len(table_headers) + 1) + '" class="empty">Loading ' + stage_key + ' data...</td></tr></tbody>',
+        '    <tbody id="' + body_id + '-body"><tr><td colspan="' + str(len(table_headers) + 1) + '" class="empty">数据加载中...</td></tr></tbody>',
         '  </table>',
         '  <div class="row" id="' + body_id + '-pager" style="margin-top:12px;gap:8px;"></div>',
         '</section>',
@@ -1066,9 +1066,9 @@ def data_center_collection_page(session: dict | None = Depends(get_current_admin
     """采集阶段：爬虫任务 + 已抓取条目"""
     body = _stage_detail_page_body(
         stage_key="collection",
-        stage_title="Collection Stage",
-        stage_desc="Spider tasks and crawled items",
-        table_headers=["Task ID", "Task Name", "Channel", "Status", "Crawled", "Failed", "Created At"],
+        stage_title="采集阶段",
+        stage_desc="爬虫任务 + 抓取条目",
+        table_headers=["任务ID", "任务名称", "渠道", "状态", "已抓取", "失败", "创建时间"],
         body_id="dc-collection",
     )
     return _render_with_permission("data_center_collection", "btn.data_center.view", body, session)
@@ -1079,9 +1079,9 @@ def data_center_cleaning_page(session: dict | None = Depends(get_current_admin))
     """清洗结构化：结构化的商机线索条目"""
     body = _stage_detail_page_body(
         stage_key="cleaning",
-        stage_title="Cleaning Stage",
-        stage_desc="Structured and validated lead records",
-        table_headers=["Lead ID", "Title", "Channel", "Company", "Contact", "Status", "Created"],
+        stage_title="清洗结构化",
+        stage_desc="结构化并校验的商机记录",
+        table_headers=["商机ID", "标题", "渠道", "公司", "联系方式", "状态", "创建时间"],
         body_id="dc-cleaning",
     )
     return _render_with_permission("data_center_cleaning", "btn.data_center.view", body, session)
@@ -1092,9 +1092,9 @@ def data_center_compliance_page(session: dict | None = Depends(get_current_admin
     """合规校验：PII 检测、风险分数"""
     body = _stage_detail_page_body(
         stage_key="compliance",
-        stage_title="Compliance Stage",
-        stage_desc="PII detection and compliance scoring",
-        table_headers=["Lead ID", "Title", "Channel", "Compliance Status", "Score", "Risk Level", "PII Types"],
+        stage_title="合规校验",
+        stage_desc="敏感信息检测 + 合规评分",
+        table_headers=["商机ID", "标题", "渠道", "合规状态", "合规分数", "风险等级", "敏感信息类型"],
         body_id="dc-compliance",
     )
     return _render_with_permission("data_center_compliance", "btn.data_center.view", body, session)
@@ -1105,9 +1105,9 @@ def data_center_grading_page(session: dict | None = Depends(get_current_admin)):
     """商机分级：A/B/C/D 等级 + 综合评分"""
     body = _stage_detail_page_body(
         stage_key="grading",
-        stage_title="Grading Stage",
-        stage_desc="Opportunity grade A/B/C/D + intent scoring",
-        table_headers=["Lead ID", "Title", "Channel", "Grade", "Score", "Budget", "Urgency", "Tags"],
+        stage_title="商机分级",
+        stage_desc="商机等级A/B/C/D + 意向评分",
+        table_headers=["商机ID", "标题", "渠道", "等级", "评分", "预算", "紧急程度", "标签"],
         body_id="dc-grading",
     )
     return _render_with_permission("data_center_grading", "btn.data_center.view", body, session)
@@ -1118,9 +1118,9 @@ def data_center_outreach_page(session: dict | None = Depends(get_current_admin))
     """客户触达：邮件/IM 发送批次记录"""
     body = _stage_detail_page_body(
         stage_key="outreach",
-        stage_title="Outreach Stage",
-        stage_desc="Email/IM sends and response tracking",
-        table_headers=["Batch ID", "Title", "Target Lead", "Channel", "Target", "Success", "Failed", "Status", "Sent At"],
+        stage_title="客户触达",
+        stage_desc="邮件/IM 发送 + 响应追踪",
+        table_headers=["批次ID", "标题", "目标商机", "渠道", "目标数", "成功", "失败", "状态", "发送时间"],
         body_id="dc-outreach",
     )
     return _render_with_permission("data_center_outreach", "btn.data_center.view", body, session)
@@ -1131,9 +1131,9 @@ def data_center_sales_page(session: dict | None = Depends(get_current_admin)):
     """销售闭环：跟进记录、成交/流失"""
     body = _stage_detail_page_body(
         stage_key="sales",
-        stage_title="Sales Closing",
-        stage_desc="Follow-ups, assignments, and won/lost deals",
-        table_headers=["Lead ID", "Title", "Company", "Assignee", "Grade", "Status", "Followups", "Last Followup", "Value"],
+        stage_title="销售闭环",
+        stage_desc="跟进、分配、成交流转",
+        table_headers=["商机ID", "标题", "公司", "负责人", "等级", "状态", "跟进次数", "最近跟进", "预估价值"],
         body_id="dc-sales",
     )
     return _render_with_permission("data_center_sales", "btn.data_center.view", body, session)
@@ -1145,33 +1145,33 @@ def data_center_opportunity_page(lead_id: str, session: dict | None = Depends(ge
     body_parts = [
         # 顶部：商机概览
         '<section class="panel">',
-        '  <h3>[User] Opportunity Timeline — ' + escape_html(lead_id) + '</h3>',
+        '  <h3>👤 商机追踪时间线 — ' + escape_html(lead_id) + '</h3>',
         '  <div class="task-detail-config-grid" id="opp-info-grid">',
-        '    <div class="kv"><div class="label">Lead ID</div><div class="value" id="opp-lead-id">' + escape_html(lead_id) + '</div></div>',
-        '    <div class="kv"><div class="label">Title</div><div class="value" id="opp-title">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Company</div><div class="value" id="opp-company">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Channel</div><div class="value" id="opp-channel">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Grade</div><div class="value" id="opp-grade">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Score</div><div class="value" id="opp-score">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Status</div><div class="value" id="opp-status">Loading...</div></div>',
-        '    <div class="kv"><div class="label">Contact (masked)</div><div class="value" id="opp-contact">Loading...</div></div>',
+        '    <div class="kv"><div class="label">商机ID</div><div class="value" id="opp-lead-id">' + escape_html(lead_id) + '</div></div>',
+        '    <div class="kv"><div class="label">标题</div><div class="value" id="opp-title">加载中...</div></div>',
+        '    <div class="kv"><div class="label">公司</div><div class="value" id="opp-company">加载中...</div></div>',
+        '    <div class="kv"><div class="label">渠道</div><div class="value" id="opp-channel">加载中...</div></div>',
+        '    <div class="kv"><div class="label">等级</div><div class="value" id="opp-grade">加载中...</div></div>',
+        '    <div class="kv"><div class="label">评分</div><div class="value" id="opp-score">加载中...</div></div>',
+        '    <div class="kv"><div class="label">状态</div><div class="value" id="opp-status">加载中...</div></div>',
+        '    <div class="kv"><div class="label">联系方式(已脱敏)</div><div class="value" id="opp-contact">加载中...</div></div>',
         '  </div>',
         '  <div class="row" style="gap:8px;margin-top:12px;">',
-        '    <button class="btn btn-sm" onclick="admin.loadOpportunityTimeline(\'' + escape_html(lead_id) + '\')">Refresh Timeline</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadOpportunityTimeline(\'' + escape_html(lead_id) + '\')">刷新时间线</button>',
         '  </div>',
         '</section>',
         # 时间线
         '<section class="panel">',
-        '  <h3>[Clock] Lifecycle Timeline</h3>',
-        '  <div id="opp-timeline" class="timeline-container"><div class="empty-inline">Loading timeline data...</div></div>',
+        '  <h3>🕓 生命周期时间线</h3>',
+        '  <div id="opp-timeline" class="timeline-container"><div class="empty-inline">时间线数据加载中...</div></div>',
         '</section>',
         # 关联入口
         '<section class="panel">',
-        '  <h3>[Link] Related Links</h3>',
+        '  <h3>🔗 相关链接</h3>',
         '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
-        '    <a class="btn btn-sm" href="/admin/spider" id="link-source-task">View Source Task</a>',
-        '    <a class="btn btn-sm" href="/admin/leads">Back to Leads</a>',
-        '    <a class="btn btn-sm" href="/admin/data_center/dashboard">Back to Funnel</a>',
+        '    <a class="btn btn-sm" href="/admin/spider" id="link-source-task">查看源任务</a>',
+        '    <a class="btn btn-sm" href="/admin/leads">返回商机列表</a>',
+        '    <a class="btn btn-sm" href="/admin/data_center/dashboard">返回漏斗看板</a>',
         '  </div>',
         '</section>',
         # 加载脚本
@@ -1197,50 +1197,50 @@ def data_center_exception_page(session: dict | None = Depends(get_current_admin)
     body_parts = [
         # 顶部：统计卡
         '<section class="panel">',
-        '  <h3>[Exclamation] Exception Pool — 异常数据集中管理</h3>',
+        '  <h3>⚠ 异常数据池 — 异常集中管理</h3>',
         '  <div class="stats-grid" id="exception-stats-grid">',
-        '    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="exception-total">-</div></div>',
-        '    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="exception-pending">-</div></div>',
-        '    <div class="stat-card"><div class="stat-label">Resolved</div><div class="stat-value" id="exception-resolved">-</div></div>',
-        '    <div class="stat-card"><div class="stat-label">7-Day Trend</div><div class="stat-value" id="exception-trend">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">总数</div><div class="stat-value" id="exception-total">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">待处理</div><div class="stat-value" id="exception-pending">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">已处理</div><div class="stat-value" id="exception-resolved">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">7日趋势</div><div class="stat-value" id="exception-trend">-</div></div>',
         '  </div>',
         '</section>',
         # 类型分布（条形图）
         '<section class="panel">',
-        '  <h3>[Chart] Exception Types</h3>',
+        '  <h3>📊 异常类型分布</h3>',
         '  <div class="type-distribution" id="exception-type-dist">',
-        '    <div class="empty-inline">Loading...</div>',
+        '    <div class="empty-inline">加载中...</div>',
         '  </div>',
         '</section>',
         # 筛选栏
         '<section class="panel">',
-        '  <h3>[Filter] Filter Exception Items</h3>',
+        '  <h3>🔍 筛选：异常条目过滤</h3>',
         '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
-        '    <label>Type <select id="exception-filter-type">',
-        '      <option value="">All Types</option>',
+        '    <label>类型 <select id="exception-filter-type">',
+        '      <option value="">全部类型</option>',
         '    </select></label>',
-        '    <label>Channel <select id="exception-filter-channel">',
-        '      <option value="">All Channels</option>',
+        '    <label>渠道 <select id="exception-filter-channel">',
+        '      <option value="">全部渠道</option>',
         '    </select></label>',
-        '    <label>Status <select id="exception-filter-status">',
-        '      <option value="">All</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="discarded">Discarded</option><option value="false_positive">False Positive</option>',
+        '    <label>状态 <select id="exception-filter-status">',
+        '      <option value="">全部</option><option value="pending">待处理</option><option value="resolved">已处理</option><option value="discarded">已废弃</option><option value="false_positive">误判</option>',
         '    </select></label>',
-        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">Apply Filter</button>',
-        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">Refresh</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">应用筛选</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">刷新</button>',
         '  </div>',
         '</section>',
         # T23 手工操作入口
         '<section class="panel" data-stage="exception">',
-        '  <h3>[Ops] Manual Operations</h3>',
+        '  <h3>🛠 手工操作</h3>',
         '  <div class="row" data-stage-actions="exception" style="gap:8px;flex-wrap:wrap;"></div>',
         '</section>',
         # 列表
         '<section class="panel">',
-        '  <h3>[Table] Exception Items</h3>',
+        '  <h3>📋 异常条目列表</h3>',
         '  <div id="exception-list" class="table-container">',
         '    <table class="data-table" id="exception-table">',
-        '      <thead><tr><th>Exception ID</th><th>Type</th><th>Channel</th><th>Title</th><th>Status</th><th>Created</th><th>Operations</th></tr></thead>',
-        '      <tbody id="exception-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>',
+        '      <thead><tr><th>异常ID</th><th>类型</th><th>渠道</th><th>标题</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>',
+        '      <tbody id="exception-tbody"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>',
         '    </table>',
         '    <div id="exception-pagination" class="pagination"></div>',
         '  </div>',
@@ -1264,39 +1264,39 @@ def data_center_channel_funnel_page(session: dict | None = Depends(get_current_a
     """分渠道转化漏斗看板：按渠道展示6阶段漏斗+核心指标+排行"""
     body_parts = [
         '<section class="panel">',
-        '  <h3>[Chart] Channel Funnel — 分渠道转化效果看板</h3>',
+        '  <h3>📊 分渠道漏斗 — 分渠道转化效果看板</h3>',
         '  <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px;">',
-        '    <label>Period <select id="channel-period">',
-        '      <option value="week">Last 4 Weeks</option><option value="month">Last 3 Months</option>',
+        '    <label>周期 <select id="channel-period">',
+        '      <option value="week">最近4周</option><option value="month">最近3个月</option>',
         '    </select></label>',
-        '    <label>Days <input type="number" id="channel-days" value="30" min="1" max="365" style="width:80px;"></label>',
-        '    <button class="btn btn-sm" onclick="admin.loadChannelFunnel()">Reload</button>',
+        '    <label>天数 <input type="number" id="channel-days" value="30" min="1" max="365" style="width:80px;"></label>',
+        '    <button class="btn btn-sm" onclick="admin.loadChannelFunnel()">重新加载</button>',
         '  </div>',
         '  <div class="stats-grid" id="channel-total-stats">',
-        '    <div class="stat-card"><div class="stat-label">Total Crawl</div><div class="stat-value" id="total-crawl">-</div></div>',
-        '    <div class="stat-card"><div class="stat-label">Total Won</div><div class="stat-value" id="total-won">-</div></div>',
-        '    <div class="stat-card"><div class="stat-label">Overall Conv.</div><div class="stat-value" id="total-conv">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">累计抓取</div><div class="stat-value" id="total-crawl">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">累计成交</div><div class="stat-value" id="total-won">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">综合转化率</div><div class="stat-value" id="total-conv">-</div></div>',
         '  </div>',
         '</section>',
         # 各渠道卡片网格
         '<section class="panel">',
-        '  <h3>[Cards] Channel Performance</h3>',
+        '  <h3>📇 各渠道表现</h3>',
         '  <div class="channel-funnel-grid" id="channel-funnel-grid">',
-        '    <div class="empty-inline">Loading channel data...</div>',
+        '    <div class="empty-inline">加载中 channel data...</div>',
         '  </div>',
         '</section>',
         # 排行榜
         '<section class="panel">',
-        '  <h3>[Ranking] Top Channels by Category</h3>',
+        '  <h3>🏆 分类渠道排名</h3>',
         '  <div class="rankings-grid" id="channel-rankings">',
-        '    <div class="empty-inline">Loading...</div>',
+        '    <div class="empty-inline">加载中...</div>',
         '  </div>',
         '</section>',
         # 趋势
         '<section class="panel">',
-        '  <h3>[Clock] Period Trend</h3>',
+        '  <h3>🕓 周期趋势</h3>',
         '  <div class="trend-chart" id="channel-trend">',
-        '    <div class="empty-inline">Loading...</div>',
+        '    <div class="empty-inline">加载中...</div>',
         '  </div>',
         '</section>',
         '<script>',
@@ -1317,35 +1317,35 @@ def data_center_batch_page(session: dict | None = Depends(get_current_admin)):
     body_parts = [
         # 提交区
         '<section class="panel">',
-        '  <h3>[Cog] Submit Batch Operation</h3>',
+        '  <h3>⚙ 提交批量操作</h3>',
         '  <div class="batch-form-grid" style="display:flex;flex-direction:column;gap:12px;">',
-        '    <label>Operation Type <select id="batch-op-type" style="padding:6px 8px;"></select></label>',
-        '    <label>Item IDs (comma separated, max 1000) ',
-        '      <textarea id="batch-item-ids" rows="3" style="width:100%;font-family:monospace;padding:6px 8px;font-size:12px;" placeholder="LEAD-123,LEAD-456,RAW-789..."></textarea>',
+        '    <label>操作类型 <select id="batch-op-type" style="padding:6px 8px;"></select></label>',
+        '    <label>条目ID（英文逗号分隔，最多1000条）',
+        '      <textarea id="batch-item-ids" rows="3" style="width:100%;font-family:monospace;padding:6px 8px;font-size:12px;" placeholder="例如：LEAD-123,LEAD-456,RAW-789..."></textarea>',
         '    </label>',
-        '    <label>Reason <input type="text" id="batch-reason" placeholder="Why this batch operation?" style="width:100%;padding:6px 8px;"></label>',
+        '    <label>操作原因 <input type="text" id="batch-reason" placeholder="请说明本次批量操作的原因" style="width:100%;padding:6px 8px;"></label>',
         '    <div class="row" style="gap:8px;">',
-        '      <button class="btn btn-primary" onclick="admin.submitBatch()">Submit Batch</button>',
-        '      <button class="btn btn-sm" onclick="admin.fillBatchDemo()">Fill Demo IDs</button>',
+        '      <button class="btn btn-primary" onclick="admin.submitBatch()">提交批量操作</button>',
+        '      <button class="btn btn-sm" onclick="admin.fillBatchDemo()">填充示例ID</button>',
         '    </div>',
         '  </div>',
         '</section>',
         # 当前进度
         '<section class="panel" id="batch-progress-section" style="display:none;">',
-        '  <h3>[Spinner] Batch Progress</h3>',
+        '  <h3>⏳ 批量执行进度</h3>',
         '  <div id="batch-progress-info"></div>',
         '  <div class="progress-bar-container"><div class="progress-bar-fill" id="batch-progress-bar"></div></div>',
         '  <div class="row" style="gap:8px;margin-top:12px;">',
-        '    <button class="btn btn-sm" onclick="admin.refreshBatchStatus()">Refresh Status</button>',
+        '    <button class="btn btn-sm" onclick="admin.refreshBatchStatus()">刷新状态</button>',
         '  </div>',
         '</section>',
         # 历史批量任务
         '<section class="panel">',
-        '  <h3>[History] Recent Batch Operations</h3>',
+        '  <h3>📋 最近批量操作</h3>',
         '  <div id="batch-list" class="table-container">',
         '    <table class="data-table">',
-        '      <thead><tr><th>Batch ID</th><th>Operation</th><th>Operator</th><th>Total</th><th>Succeeded</th><th>Failed</th><th>Status</th><th>Risk</th><th>Started</th></tr></thead>',
-        '      <tbody id="batch-list-body"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>',
+        '      <thead><tr><th>批次ID</th><th>操作</th><th>操作人</th><th>总数</th><th>成功数</th><th>失败数</th><th>状态</th><th>风险等级</th><th>开始时间</th></tr></thead>',
+        '      <tbody id="batch-list-body"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>',
         '    </table>',
         '  </div>',
         '</section>',
@@ -1368,30 +1368,30 @@ def data_center_export_page(session: dict | None = Depends(get_current_admin)):
     body_parts = [
         # 提交区
         '<section class="panel">',
-        '  <h3>[Download] Export Center</h3>',
+        '  <h3>📥 数据导出中心</h3>',
         '  <div style="display:flex;flex-direction:column;gap:12px;">',
-        '    <label>Stage <select id="export-stage" style="padding:6px 8px;"></select></label>',
-        '    <label><input type="checkbox" id="export-plaintext" style="margin-right:8px;"> Export Plaintext (Super Admin only)</label>',
-        '    <label>Reason <input type="text" id="export-reason" placeholder="Brief description of the export purpose" style="width:100%;padding:6px 8px;"></label>',
+        '    <label>阶段 <select id="export-stage" style="padding:6px 8px;"></select></label>',
+        '    <label><input type="checkbox" id="export-plaintext" style="margin-right:8px;"> 导出明文（仅超级管理员）</label>',
+        '    <label>导出原因 <input type="text" id="export-reason" placeholder="简要说明本次导出的用途" style="width:100%;padding:6px 8px;"></label>',
         '    <div class="row" style="gap:8px;">',
-        '      <button class="btn btn-primary" onclick="admin.submitExport()">Submit Export</button>',
+        '      <button class="btn btn-primary" onclick="admin.submitExport()">提交导出</button>',
         '    </div>',
-        '    <div class="manual-dialog-stage" style="margin-top:8px;">⚠ 所有默认导出为脱敏数据，明文导出需 Super Admin 权限，且全程留痕</div>',
+        '    <div class="manual-dialog-stage" style="margin-top:8px;">⚠ 所有默认导出为脱敏数据，明文导出需 超级管理员 权限，且全程留痕</div>',
         '  </div>',
         '</section>',
         # 当前导出任务
         '<section class="panel" id="export-progress-section" style="display:none;">',
-        '  <h3>[Spinner] Current Export</h3>',
+        '  <h3>⏳ 当前导出</h3>',
         '  <div id="export-progress-info"></div>',
         '  <div class="progress-bar-container"><div class="progress-bar-fill" id="export-progress-bar"></div></div>',
         '</section>',
         # 导出历史
         '<section class="panel">',
-        '  <h3>[History] Export History</h3>',
+        '  <h3>📋 导出历史</h3>',
         '  <div id="export-list" class="table-container">',
         '    <table class="data-table">',
-        '      <thead><tr><th>Export ID</th><th>Stage</th><th>Operator</th><th>Rows</th><th>Size</th><th>Masked</th><th>Status</th><th>Time</th><th>Download</th></tr></thead>',
-        '      <tbody id="export-list-body"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>',
+        '      <thead><tr><th>导出ID</th><th>阶段</th><th>操作人</th><th>行数</th><th>大小</th><th>脱敏</th><th>状态</th><th>时间</th><th>下载</th></tr></thead>',
+        '      <tbody id="export-list-body"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>',
         '    </table>',
         '  </div>',
         '</section>',

@@ -146,7 +146,7 @@
   function renderFunnelChart(containerId, stages) {
     var el = byId(containerId);
     if (!el) return;
-    if (!stages.length) { el.innerHTML = '<div class="empty-inline">No funnel data available.</div>'; return; }
+    if (!stages.length) { el.innerHTML = '<div class="empty-inline">暂无漏斗数据</div>'; return; }
 
     var max = 0;
     for (var i = 0; i < stages.length; i++) if (stages[i].count > max) max = stages[i].count;
@@ -185,7 +185,7 @@
   function renderBarDistribution(containerId, rows) {
     var el = byId(containerId);
     if (!el) return;
-    if (!rows.length) { el.innerHTML = '<div class="empty-inline">No data available.</div>'; return; }
+    if (!rows.length) { el.innerHTML = '<div class="empty-inline">暂无数据</div>'; return; }
     var total = 0;
     for (var i = 0; i < rows.length; i++) total += (rows[i].count || 0);
     var html = '<div class="dist-list">';
@@ -194,7 +194,7 @@
       var pct = total > 0 ? ((r.count / total) * 100).toFixed(1) : "0.0";
       html += (
         '<div class="dist-row">' +
-        '  <div class="dist-key">' + escapeHTML(r.key || r.label || r.name || "Unknown") + '</div>' +
+        '  <div class="dist-key">' + escapeHTML(r.key || r.label || r.name || "未命名") + '</div>' +
         '  <div class="dist-bar-wrap"><div class="dist-bar" style="width:' + pct + '%;"></div></div>' +
         '  <div class="dist-count">' + safe(r.count, 0) + ' (' + pct + '%)</div>' +
         '</div>'
@@ -218,7 +218,7 @@
   function renderTrendChart(containerId, points, kind) {
     var el = byId(containerId);
     if (!el) return;
-    if (!points.length) { el.innerHTML = '<div class="empty-inline">No trend data available.</div>'; return; }
+    if (!points.length) { el.innerHTML = '<div class="empty-inline">暂无趋势数据</div>'; return; }
 
     var max = 0, min = 0;
     for (var i = 0; i < points.length; i++) {
@@ -317,7 +317,7 @@
 
     if (!items.length) {
       var colCount = colKeys.length + 1;
-      tbodyEl.innerHTML = '<tr><td colspan="' + colCount + '" class="empty">No ' + stageKey + ' data available.</td></tr>';
+      tbodyEl.innerHTML = '<tr><td colspan="' + colCount + '" class="empty">暂无数据</td></tr>';
     } else {
       var rowsHtml = "";
       for (var i = 0; i < items.length; i++) {
@@ -334,7 +334,7 @@
         var canView = admin.permissionSet["btn.data_center.view"];
         var actionHtml = '<td>';
         if (lead_id && canView) {
-          actionHtml += '<a class="btn btn-sm" href="/admin/data_center/opportunity/' + encodeURIComponent(lead_id) + '">View</a>';
+          actionHtml += '<a class="btn btn-sm" href="/admin/data_center/opportunity/' + encodeURIComponent(lead_id) + '">查看</a>';
         } else {
           actionHtml += '<span class="muted">-</span>';
         }
@@ -348,9 +348,9 @@
     // Pager
     var totalPages = Math.max(1, Math.ceil(total / per_page));
     var pagerHtml = "";
-    pagerHtml += '<span class="muted">Page ' + page + ' / ' + totalPages + ' (total ' + total + ')</span>';
-    if (page > 1) pagerHtml += '<button class="btn btn-sm" onclick="admin.loadStageList(\'' + stageKey + '\',\'' + prefix + '\',' + (page - 1) + ')">Prev</button>';
-    if (page < totalPages) pagerHtml += '<button class="btn btn-sm" onclick="admin.loadStageList(\'' + stageKey + '\',\'' + prefix + '\',' + (page + 1) + ')">Next</button>';
+    pagerHtml += '<span class="muted">第 ' + page + ' / ' + totalPages + ' (共 ' + total + ')</span>';
+    if (page > 1) pagerHtml += '<button class="btn btn-sm" onclick="admin.loadStageList(\'' + stageKey + '\',\'' + prefix + '\',' + (page - 1) + ')">上一页</button>';
+    if (page < totalPages) pagerHtml += '<button class="btn btn-sm" onclick="admin.loadStageList(\'' + stageKey + '\',\'' + prefix + '\',' + (page + 1) + ')">下一页</button>';
     var pagerEl = byId(prefix + "-pager");
     if (pagerEl) pagerEl.innerHTML = pagerHtml;
   }
@@ -376,7 +376,7 @@
       var tlEl = byId("opp-timeline");
       if (!tlEl) return;
       if (!events.length) {
-        tlEl.innerHTML = '<div class="empty-inline">No timeline events available for this lead.</div>';
+        tlEl.innerHTML = '<div class="empty-inline">此商机暂无时间线事件</div>';
         return;
       }
       var html = '<div class="timeline-list">';
@@ -387,13 +387,13 @@
           '  <div class="timeline-marker"></div>' +
           '  <div class="timeline-body">' +
           '    <div class="timeline-head">' +
-          '      <span class="timeline-stage">' + escapeHTML(safe(e.stage || e.label, "Stage")) + '</span>' +
+          '      <span class="timeline-stage">' + escapeHTML(safe(e.stage || e.label, "阶段")) + '</span>' +
           '      <span class="timeline-time">' + escapeHTML(safe(e.time || e.created_at, "-")) + '</span>' +
           '    </div>' +
           '    <div class="timeline-desc">' + escapeHTML(safe(e.description || e.message || e.detail || "", "")) + '</div>' +
           '    <div class="timeline-meta">' +
-                 (e.operator ? '<span class="timeline-op">By: ' + escapeHTML(safe(e.operator, "-")) + '</span>' : "") +
-                 (e.status ? ' <span class="timeline-status">Status: ' + escapeHTML(safe(e.status, "-")) + '</span>' : "") +
+                 (e.operator ? '<span class="timeline-op">操作人: ' + escapeHTML(safe(e.operator, "-")) + '</span>' : "") +
+                 (e.status ? ' <span class="timeline-status">状态: ' + escapeHTML(safe(e.status, "-")) + '</span>' : "") +
           '    </div>' +
           '  </div>' +
           '</div>'
@@ -784,7 +784,7 @@
           if (p) p.textContent = d.pending;
           if (res) res.textContent = d.resolved;
           if (tr) {
-            var trLabel = "Pending";
+            var trLabel = "待处理";
             if (d.trend && d.trend.length) {
               trLabel = d.trend.map(function (x) { return x.date + ":" + x.pending; }).join(" | ");
             }
@@ -850,11 +850,13 @@
         var tbody = document.getElementById("exception-tbody");
         if (!tbody) return;
         if (!data.data || !data.data.items || !data.data.items.length) {
-          tbody.innerHTML = '<tr><td colspan="7" class="empty">No items found</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
           return;
         }
         var rowsHtml = "";
         data.data.items.forEach(function (item) {
+          // 英文状态码比较 + 中文显示
+          var __zhExcStatus = {"pending":"待处理","resolved":"已处理","discarded":"已废弃","false_positive":"误判"};
           var statusColor = "pending" === item.status ? "#f5a623" :
                              "resolved" === item.status ? "#28a745" :
                              "discarded" === item.status ? "#dc3545" :
@@ -864,12 +866,12 @@
             '<td><span class="status-tag" style="background:#f0f3f7;color:#2c3e50;padding:2px 8px;border-radius:3px;font-size:11px;">' + (item.exception_type || "") + '</span></td>' +
             '<td>' + (item.source_channel || "") + '</td>' +
             '<td>' + (item.title || "") + '</td>' +
-            '<td style="color:' + statusColor + ';font-weight:500;">' + item.status + '</td>' +
+            '<td style="color:' + statusColor + ';font-weight:500;">' + (__zhExcStatus[item.status] || item.status) + '</td>' +
             '<td>' + (item.created_at || "") + '</td>' +
             '<td data-stage="exception" class="row-actions">' +
-              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'reinsert\',\'' + item.exception_id + '\')">Reinsert</button>' +
-              '<button class="btn btn-sm btn-danger" onclick="admin.openManualDialog(\'exception\',\'discard\',\'' + item.exception_id + '\')">Discard</button>' +
-              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'false_positive\',\'' + item.exception_id + '\')">FP</button>' +
+              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'reinsert\',\'' + item.exception_id + '\')">重新入库</button>' +
+              '<button class="btn btn-sm btn-danger" onclick="admin.openManualDialog(\'exception\',\'discard\',\'' + item.exception_id + '\')">废弃</button>' +
+              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'false_positive\',\'' + item.exception_id + '\')">标记误判</button>' +
             '</td></tr>';
         });
         tbody.innerHTML = rowsHtml;
@@ -930,8 +932,8 @@
             // 核心指标
             if (ch.metrics) {
               html += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #d9e1ea;font-size:11px;color:#6b7a90;">';
-              html += 'Avg Cycle: ' + (ch.metrics.avg_won_cycle_days || '-') + ' days | ';
-              html += 'Cost/Won: ' + (ch.metrics.cost_per_won_lead || '-');
+              html += '平均周期: ' + (ch.metrics.avg_won_cycle_days || '-') + ' 天 | ';
+              html += '成单成本: ' + (ch.metrics.cost_per_won_lead || '-');
               html += '</div>';
             }
             html += '</div>';
@@ -947,7 +949,7 @@
             var items = d.rankings[rkKey];
             if (!items || !items.length) return;
             rhtml += '<div style="border:1px solid #e1e8ef;border-radius:8px;padding:12px;">';
-            var titleMap = { by_conversion: "By Conversion", by_won: "By Won Deals", by_cost: "By Cost (Asc)" };
+            var titleMap = { by_conversion: "按转化率", by_won: "按成单数", by_cost: "按成本(升序)" };
             rhtml += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#2c3e50;">' + (titleMap[rkKey] || rkKey) + '</div>';
             items.forEach(function (item, idx) {
               var color = idx === 0 ? "#d4a017" : idx === 1 ? "#b0b4b8" : idx === 2 ? "#b07a3f" : "#6b7a90";
@@ -964,7 +966,7 @@
         // 趋势
         var trendEl = document.getElementById("channel-trend");
         if (trendEl && d.trend) {
-          var trhtml = '<table class="data-table"><thead><tr><th>Period</th>';
+          var trhtml = '<table class="data-table"><thead><tr><th>周期</th>';
           // columns from first row
           if (d.trend.length) Object.keys(d.trend[0]).forEach(function (k) { if (k !== "period") trhtml += "<th>" + k + "</th>"; });
           trhtml += "</tr></thead><tbody>";
@@ -1022,8 +1024,8 @@
   admin.submitBatch = function () {
     var opType = document.getElementById("batch-op-type") ? document.getElementById("batch-op-type").value : "";
     var ids = document.getElementById("batch-item-ids") ? document.getElementById("batch-item-ids").value : "";
-    var reason = document.getElementById("batch-reason") ? document.getElementById("batch-reason").value : "batch operation";
-    if (!opType || !ids.trim()) { admin.showToast("请填写操作类型 + 条目 ID", "error"); return; }
+    var reason = document.getElementById("batch-reason") ? document.getElementById("batch-reason").value : "批量操作";
+    if (!opType || !ids.trim()) { admin.showToast("请填写操作类型 + 条目ID", "error"); return; }
     var url = "/api/admin/data_center/batch/submit?op_type=" + encodeURIComponent(opType) +
               "&item_ids=" + encodeURIComponent(ids) + "&reason=" + encodeURIComponent(reason);
     var submitBtn = document.querySelector("#batch-progress-section");
@@ -1053,8 +1055,11 @@
         var bar = document.getElementById("batch-progress-bar");
         var section = document.getElementById("batch-progress-section");
         if (section) section.style.display = "block";
-        if (info) info.innerHTML = '<div><strong>Batch ID:</strong> ' + st.batch_id + '</div>' +
-          '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">Status: ' + st.status + ' | Total: ' + st.total + ' | Succeeded: ' + st.succeeded + ' | Failed: ' + st.failed + '</div>';
+        if (info) {
+          var __zhBatchLbl = {"completed":"已完成","running":"执行中","pending":"等待中","failed":"失败"};
+          info.innerHTML = '<div><strong>批量任务ID:</strong> ' + st.batch_id + '</div>' +
+            '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">状态: ' + (__zhBatchLbl[st.status] || st.status) + ' | 总数: ' + st.total + ' | 成功: ' + st.succeeded + ' | 失败: ' + st.failed + '</div>';
+        }
         var pct = st.total > 0 ? Math.round(st.processed / st.total * 100) : 0;
         if (bar) bar.style.width = pct + "%";
         if (st.status !== "completed" && admin._batchPollCount < 30) {
@@ -1062,7 +1067,7 @@
           setTimeout(function () { admin.pollBatchStatus(); }, 2000);
         } else {
           admin.loadBatchList();
-          admin.showToast("批量任务完成：" + st.batch_id, "success");
+          admin.showToast("批量任务已完成：" + st.batch_id, "success");
         }
       }).catch(function () { /* ignore */ });
   };
@@ -1083,6 +1088,9 @@
         }
         var rows = "";
         data.data.items.forEach(function (it) {
+          // 英文状态码比较 + 中文显示
+          var __zhBatchStatus = {"completed":"已完成","running":"执行中","pending":"等待中","failed":"失败"};
+          var __zhRisk = {"critical":"严重","high":"高","normal":"正常","low":"低"};
           var statusColor = "completed" === it.status ? "#28a745" : "running" === it.status ? "#4a90e2" : "pending" === it.status ? "#f5a623" : "#6b7a90";
           var riskColor = "critical" === it.risk_level ? "#dc3545" : "high" === it.risk_level ? "#f5a623" : "#6b7a90";
           rows += '<tr><td>' + it.batch_id + '</td>' +
@@ -1091,8 +1099,8 @@
                   '<td>' + (it.total || 0) + '</td>' +
                   '<td style="color:#28a745;">' + (it.succeeded || 0) + '</td>' +
                   '<td style="color:#dc3545;">' + (it.failed || 0) + '</td>' +
-                  '<td style="color:' + statusColor + ';font-weight:500;">' + it.status + '</td>' +
-                  '<td style="color:' + riskColor + ';">' + (it.risk_level || "normal") + '</td>' +
+                  '<td style="color:' + statusColor + ';font-weight:500;">' + (__zhBatchStatus[it.status] || it.status) + '</td>' +
+                  '<td style="color:' + riskColor + ';">' + (__zhRisk[it.risk_level] || it.risk_level || "正常") + '</td>' +
                   '<td>' + (it.started_at || "") + '</td></tr>';
         });
         body.innerHTML = rows;
@@ -1128,7 +1136,7 @@
   admin.submitExport = function () {
     var stage = document.getElementById("export-stage") ? document.getElementById("export-stage").value : "exception";
     var plaintext = document.getElementById("export-plaintext") ? document.getElementById("export-plaintext").checked : false;
-    var reason = document.getElementById("export-reason") ? document.getElementById("export-reason").value : "data export";
+    var reason = document.getElementById("export-reason") ? document.getElementById("export-reason").value : "数据导出";
     var url = "/api/admin/data_center/export/submit?stage_key=" + encodeURIComponent(stage) +
               "&export_plaintext=" + (plaintext ? "true" : "false") + "&reason=" + encodeURIComponent(reason);
     var section = document.getElementById("export-progress-section");
@@ -1159,14 +1167,15 @@
         var section = document.getElementById("export-progress-section");
         if (section) section.style.display = "block";
         if (info) {
-          var size = st.file_size ? (st.file_size / 1024).toFixed(1) + " KB" : "generating...";
+          var size = st.file_size ? (st.file_size / 1024).toFixed(1) + " KB" : "生成中...";
           var rows = st.row_count || 0;
-          info.innerHTML = '<div><strong>Export ID:</strong> ' + st.export_id + '</div>' +
-            '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">Status: ' + st.status + ' | Rows: ' + rows + ' | Size: ' + size + '</div>';
+          var __zhExpStatus = {"ready":"已就绪","generating":"生成中","error":"出错","pending":"等待中"};
+          info.innerHTML = '<div><strong>导出ID:</strong> ' + st.export_id + '</div>' +
+            '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">状态：' + (__zhExpStatus[st.status] || st.status) + ' | 行数：' + rows + ' | 大小：' + size + '</div>';
           if (st.status === "ready" && st.file_content_b64) {
             var filename = "export_" + st.stage_key + "_" + st.export_id + ".csv";
             info.innerHTML += '<div style="margin-top:8px;"><a class="btn btn-primary" onclick="admin.downloadExportFile(\'' +
-              st.export_id + '\')">📥 Download CSV</a></div>';
+              st.export_id + '\')">📥 下载CSV文件</a></div>';
           }
         }
         var pct = st.status === "ready" ? 100 : st.status === "generating" ? 40 : 5;
@@ -1214,8 +1223,9 @@
         }
         var rows = "";
         data.data.items.forEach(function (it) {
+          var __zhExpListStatus = {"ready":"已就绪","generating":"生成中","error":"出错","pending":"等待中"};
           var statusColor = "ready" === it.status ? "#28a745" : "generating" === it.status ? "#4a90e2" : "error" === it.status ? "#dc3545" : "#6b7a90";
-          var maskLabel = true === it.mask_enabled ? "Masked" : (it.mask_enabled ? it.mask_enabled : "-");
+          var maskLabel = true === it.mask_enabled ? "已脱敏" : (it.mask_enabled ? it.mask_enabled : "-");
           var downloadHtml = it.status === "ready" ? '<a class="btn btn-sm" onclick="admin.downloadExportFile(\'' + it.export_id + '\')">📥</a>' : "-";
           rows += '<tr><td>' + it.export_id + '</td>' +
                   '<td>' + (it.stage_name || it.stage_key || "") + '</td>' +
@@ -1223,7 +1233,7 @@
                   '<td>' + (it.row_count || 0) + '</td>' +
                   '<td>' + (it.file_size ? (it.file_size / 1024).toFixed(1) + "KB" : "-") + '</td>' +
                   '<td>' + maskLabel + '</td>' +
-                  '<td style="color:' + statusColor + ';font-weight:500;">' + it.status + '</td>' +
+                  '<td style="color:' + statusColor + ';font-weight:500;">' + (__zhExpListStatus[it.status] || it.status) + '</td>' +
                   '<td>' + (it.started_at || it.completed_at || "") + '</td>' +
                   '<td>' + downloadHtml + '</td></tr>';
         });
