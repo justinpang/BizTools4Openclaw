@@ -233,6 +233,14 @@ def _page_title(active_key: str) -> str:
         "compliance_review": "Compliance Review",
         "compliance_config": "Compliance Rules",
         "notifications": "Message Center",
+        "data_center_dashboard": "Funnel Dashboard",
+        "data_center_collection": "Collection Stage",
+        "data_center_cleaning": "Cleaning Stage",
+        "data_center_compliance": "Compliance Stage",
+        "data_center_grading": "Grading Stage",
+        "data_center_outreach": "Outreach Stage",
+        "data_center_sales": "Sales Closing Stage",
+        "data_center_opportunity": "Opportunity Timeline",
         "empty": "Empty State Demo",
         "403": "Permission Denied",
     }
@@ -895,6 +903,274 @@ def notifications_page(session: dict | None = Depends(get_current_admin)):
     ]
     body = "\n".join(body_parts) + "\n"
     return _render_with_permission("notifications", "btn.compliance.notification", body, session)
+
+
+# ===========================================================================
+# T21: 全链路 6 阶段管控看板 — 页面路由
+# ===========================================================================
+
+@router.get("/data_center/dashboard", response_class=HTMLResponse)
+def data_center_dashboard_page(session: dict | None = Depends(get_current_admin)):
+    """全链路漏斗总览看板：核心指标卡 + 6 阶段漏斗 + 渠道/等级分布图 + 趋势图"""
+    body_parts = [
+        # 1) 顶部核心指标卡
+        '<section class="stats-grid" id="dc-summary-grid">',
+        '  <div class="stat-card"><div class="label">[Sun] Today Added</div><div class="value" id="v-today-added">0</div><div class="sub" id="v-trend">—</div></div>',
+        '  <div class="stat-card"><div class="label">[Folder] Total Leads</div><div class="value" id="v-total-leads">0</div></div>',
+        '  <div class="stat-card"><div class="label">[Star] High Intent</div><div class="value" id="v-high-intent">0</div></div>',
+        '  <div class="stat-card"><div class="label">[User] Pending Followup</div><div class="value" id="v-pending-followup">0</div></div>',
+        '  <div class="stat-card"><div class="label">[Check] Closed/Won</div><div class="value" id="v-won">0</div></div>',
+        '</section>',
+
+        # 2) 6 阶段漏斗图
+        '<section class="panel">',
+        '  <h3>[Chart] Full-Link Funnel (6 Stages)</h3>',
+        '  <div class="row" style="gap:8px;margin-bottom:12px;">',
+        '    <button class="btn btn-sm" onclick="admin.loadFunnelChart()">Refresh Funnel</button>',
+        '  </div>',
+        '  <div id="funnel-chart" class="funnel-chart"><div class="empty-inline">Loading funnel data...</div></div>',
+        '</section>',
+
+        # 3) 6 阶段快速入口卡片
+        '<section class="panel">',
+        '  <h3>[Folder] 6 Stage Quick Entry</h3>',
+        '  <div class="channel-cards" id="stage-cards">',
+        '    <a class="channel-card" href="/admin/data_center/collection">',
+        '      <span class="channel-icon">[Spider]</span><span class="channel-title">Collection Stage</span><span class="channel-desc">Crawled tasks & items</span>',
+        '    </a>',
+        '    <a class="channel-card" href="/admin/data_center/cleaning">',
+        '      <span class="channel-icon">[Wand]</span><span class="channel-title">Cleaning Stage</span><span class="channel-desc">Structured, valid leads</span>',
+        '    </a>',
+        '    <a class="channel-card" href="/admin/data_center/compliance">',
+        '      <span class="channel-icon">[Shield]</span><span class="channel-title">Compliance Stage</span><span class="channel-desc">PII detection, risk score</span>',
+        '    </a>',
+        '    <a class="channel-card" href="/admin/data_center/grading">',
+        '      <span class="channel-icon">[Star]</span><span class="channel-title">Grading Stage</span><span class="channel-desc">A/B/C/D grade + score</span>',
+        '    </a>',
+        '    <a class="channel-card" href="/admin/data_center/outreach">',
+        '      <span class="channel-icon">[Send]</span><span class="channel-title">Outreach Stage</span><span class="channel-desc">Email/IM sends + responses</span>',
+        '    </a>',
+        '    <a class="channel-card" href="/admin/data_center/sales">',
+        '      <span class="channel-icon">[Money]</span><span class="channel-title">Sales Closing</span><span class="channel-desc">Followups, won/lost deals</span>',
+        '    </a>',
+        '  </div>',
+        '</section>',
+
+        # 4) 渠道分布 + 等级分布（两列）
+        '<section class="panel">',
+        '  <div class="row" style="gap:24px;flex-wrap:wrap;">',
+        '    <div style="flex:1;min-width:320px;">',
+        '      <h3>[Chart] Channel Distribution</h3>',
+        '      <div id="channel-distribution" class="distribution-chart"><div class="empty-inline">Loading...</div></div>',
+        '    </div>',
+        '    <div style="flex:1;min-width:320px;">',
+        '      <h3>[Chart] Grade Distribution</h3>',
+        '      <div id="grade-distribution" class="distribution-chart"><div class="empty-inline">Loading...</div></div>',
+        '    </div>',
+        '  </div>',
+        '</section>',
+
+        # 5) 近 7 天趋势折线图
+        '<section class="panel">',
+        '  <h3>[Chart] 7-Day Trend (Leads / Won)</h3>',
+        '  <div class="row" style="gap:8px;margin-bottom:12px;">',
+        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'leads\')">Leads Trend</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadTrendChart(\'won\')">Won Trend</button>',
+        '  </div>',
+        '  <div id="trend-chart" class="trend-chart"><div class="empty-inline">Loading trend data...</div></div>',
+        '</section>',
+
+        # 页面加载脚本
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      if (admin.loadDataCenterSummary) admin.loadDataCenterSummary();',
+        '      if (admin.loadFunnelChart) admin.loadFunnelChart();',
+        '      if (admin.loadDistributionCharts) admin.loadDistributionCharts();',
+        '      if (admin.loadTrendChart) admin.loadTrendChart("leads");',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_dashboard", "btn.data_center.view", body, session)
+
+
+def _stage_detail_page_body(stage_key: str, stage_title: str, stage_desc: str,
+                            table_headers: list[str], body_id: str) -> str:
+    """通用阶段明细页模板：阶段汇总指标 + 筛选栏 + 分页表格 + 点击跳转商机追踪"""
+    body_parts = [
+        # 阶段汇总指标
+        '<section class="stats-grid" id="' + body_id + '-stats">',
+        '  <div class="stat-card"><div class="label">[Folder] Total Items</div><div class="value" id="' + body_id + '-total">0</div></div>',
+        '  <div class="stat-card"><div class="label">[Check] Passed/Valid</div><div class="value" id="' + body_id + '-valid">0</div></div>',
+        '  <div class="stat-card"><div class="label">[Alert] Exceptions</div><div class="value" id="' + body_id + '-exception">0</div></div>',
+        '  <div class="stat-card"><div class="label">[Clock] Recent 24h</div><div class="value" id="' + body_id + '-recent">0</div></div>',
+        '</section>',
+        # 筛选栏
+        '<section class="panel">',
+        '  <h3>[Filter] ' + stage_title + ' — ' + stage_desc + '</h3>',
+        '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
+        '    <label>Status <select id="' + body_id + '-filter-status">',
+        '      <option value="">All</option><option value="APPROVED">Approved</option><option value="PENDING">Pending</option><option value="REJECTED">Rejected</option>',
+        '    </select></label>',
+        '    <label>Channel <select id="' + body_id + '-filter-channel">',
+        '      <option value="">All</option><option value="generic_web">General Web</option><option value="short_video">Short Video</option><option value="xhs">Little Red Book</option><option value="qa_platform">Q&A Platform</option><option value="b2b_supply">B2B Supply</option><option value="bidding">Bidding</option><option value="company_biz">Corporate</option>',
+        '    </select></label>',
+        '    <label>Keyword <input type="text" id="' + body_id + '-filter-keyword" placeholder="Search..."/></label>',
+        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Apply</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Refresh</button>',
+        '  </div>',
+        '</section>',
+        # 明细表格
+        '<section class="panel">',
+        '  <table class="data-table" id="' + body_id + '-table">',
+        '    <thead><tr>',
+        '      ' + "".join(["<th>" + h + "</th>" for h in table_headers]) + '<th>Actions</th>',
+        '    </tr></thead>',
+        '    <tbody id="' + body_id + '-body"><tr><td colspan="' + str(len(table_headers) + 1) + '" class="empty">Loading ' + stage_key + ' data...</td></tr></tbody>',
+        '  </table>',
+        '  <div class="row" id="' + body_id + '-pager" style="margin-top:12px;gap:8px;"></div>',
+        '</section>',
+        # 分页 & 加载脚本
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined" && admin.loadStageList) admin.loadStageList("' + stage_key + '","' + body_id + '",1);',
+        '  })();',
+        '</script>',
+    ]
+    return "\n".join(body_parts) + "\n"
+
+
+@router.get("/data_center/collection", response_class=HTMLResponse)
+def data_center_collection_page(session: dict | None = Depends(get_current_admin)):
+    """采集阶段：爬虫任务 + 已抓取条目"""
+    body = _stage_detail_page_body(
+        stage_key="collection",
+        stage_title="Collection Stage",
+        stage_desc="Spider tasks and crawled items",
+        table_headers=["Task ID", "Task Name", "Channel", "Status", "Crawled", "Failed", "Created At"],
+        body_id="dc-collection",
+    )
+    return _render_with_permission("data_center_collection", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/cleaning", response_class=HTMLResponse)
+def data_center_cleaning_page(session: dict | None = Depends(get_current_admin)):
+    """清洗结构化：结构化的商机线索条目"""
+    body = _stage_detail_page_body(
+        stage_key="cleaning",
+        stage_title="Cleaning Stage",
+        stage_desc="Structured and validated lead records",
+        table_headers=["Lead ID", "Title", "Channel", "Company", "Contact", "Status", "Created"],
+        body_id="dc-cleaning",
+    )
+    return _render_with_permission("data_center_cleaning", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/compliance", response_class=HTMLResponse)
+def data_center_compliance_page(session: dict | None = Depends(get_current_admin)):
+    """合规校验：PII 检测、风险分数"""
+    body = _stage_detail_page_body(
+        stage_key="compliance",
+        stage_title="Compliance Stage",
+        stage_desc="PII detection and compliance scoring",
+        table_headers=["Lead ID", "Title", "Channel", "Compliance Status", "Score", "Risk Level", "PII Types"],
+        body_id="dc-compliance",
+    )
+    return _render_with_permission("data_center_compliance", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/grading", response_class=HTMLResponse)
+def data_center_grading_page(session: dict | None = Depends(get_current_admin)):
+    """商机分级：A/B/C/D 等级 + 综合评分"""
+    body = _stage_detail_page_body(
+        stage_key="grading",
+        stage_title="Grading Stage",
+        stage_desc="Opportunity grade A/B/C/D + intent scoring",
+        table_headers=["Lead ID", "Title", "Channel", "Grade", "Score", "Budget", "Urgency", "Tags"],
+        body_id="dc-grading",
+    )
+    return _render_with_permission("data_center_grading", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/outreach", response_class=HTMLResponse)
+def data_center_outreach_page(session: dict | None = Depends(get_current_admin)):
+    """客户触达：邮件/IM 发送批次记录"""
+    body = _stage_detail_page_body(
+        stage_key="outreach",
+        stage_title="Outreach Stage",
+        stage_desc="Email/IM sends and response tracking",
+        table_headers=["Batch ID", "Title", "Target Lead", "Channel", "Target", "Success", "Failed", "Status", "Sent At"],
+        body_id="dc-outreach",
+    )
+    return _render_with_permission("data_center_outreach", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/sales", response_class=HTMLResponse)
+def data_center_sales_page(session: dict | None = Depends(get_current_admin)):
+    """销售闭环：跟进记录、成交/流失"""
+    body = _stage_detail_page_body(
+        stage_key="sales",
+        stage_title="Sales Closing",
+        stage_desc="Follow-ups, assignments, and won/lost deals",
+        table_headers=["Lead ID", "Title", "Company", "Assignee", "Grade", "Status", "Followups", "Last Followup", "Value"],
+        body_id="dc-sales",
+    )
+    return _render_with_permission("data_center_sales", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/opportunity/{lead_id}", response_class=HTMLResponse)
+def data_center_opportunity_page(lead_id: str, session: dict | None = Depends(get_current_admin)):
+    """单商机全生命周期追踪：按时间线展示 6 阶段流转过程"""
+    body_parts = [
+        # 顶部：商机概览
+        '<section class="panel">',
+        '  <h3>[User] Opportunity Timeline — ' + escape_html(lead_id) + '</h3>',
+        '  <div class="task-detail-config-grid" id="opp-info-grid">',
+        '    <div class="kv"><div class="label">Lead ID</div><div class="value" id="opp-lead-id">' + escape_html(lead_id) + '</div></div>',
+        '    <div class="kv"><div class="label">Title</div><div class="value" id="opp-title">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Company</div><div class="value" id="opp-company">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Channel</div><div class="value" id="opp-channel">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Grade</div><div class="value" id="opp-grade">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Score</div><div class="value" id="opp-score">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Status</div><div class="value" id="opp-status">Loading...</div></div>',
+        '    <div class="kv"><div class="label">Contact (masked)</div><div class="value" id="opp-contact">Loading...</div></div>',
+        '  </div>',
+        '  <div class="row" style="gap:8px;margin-top:12px;">',
+        '    <button class="btn btn-sm" onclick="admin.loadOpportunityTimeline(\'' + escape_html(lead_id) + '\')">Refresh Timeline</button>',
+        '  </div>',
+        '</section>',
+        # 时间线
+        '<section class="panel">',
+        '  <h3>[Clock] Lifecycle Timeline</h3>',
+        '  <div id="opp-timeline" class="timeline-container"><div class="empty-inline">Loading timeline data...</div></div>',
+        '</section>',
+        # 关联入口
+        '<section class="panel">',
+        '  <h3>[Link] Related Links</h3>',
+        '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
+        '    <a class="btn btn-sm" href="/admin/spider" id="link-source-task">View Source Task</a>',
+        '    <a class="btn btn-sm" href="/admin/leads">Back to Leads</a>',
+        '    <a class="btn btn-sm" href="/admin/data_center/dashboard">Back to Funnel</a>',
+        '  </div>',
+        '</section>',
+        # 加载脚本
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined" && admin.loadOpportunityTimeline) {',
+        '      admin.loadOpportunityTimeline("' + escape_html(lead_id) + '");',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_opportunity", "btn.data_center.view", body, session)
+
+
+# 工具：确保 escape_html 可用（在 pages.py 顶部已经导入 html 模块上下文）
+def escape_html(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
 
 
 __all__ = ["router"]

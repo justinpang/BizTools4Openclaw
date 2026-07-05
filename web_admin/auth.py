@@ -72,6 +72,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.compliance.view_history",
         "btn.compliance.config",
         "btn.compliance.notification",
+        "btn.data_center.view",
+        "btn.data_center.view_raw",
     },
     ROLE_OPS: {
         "btn.dashboard.view",
@@ -89,6 +91,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.leads.add_blacklist",
         "btn.audit.view",
         "btn.compliance.notification",
+        "btn.data_center.view",
     },
     ROLE_SALES: {
         "btn.dashboard.view",
@@ -97,6 +100,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.sales.assign",
         "btn.sales.record_followup",
         "btn.compliance.notification",
+        "btn.data_center.view",
     },
     ROLE_COMPLIANCE: {
         "btn.dashboard.view",
@@ -108,6 +112,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.compliance.reject",
         "btn.compliance.view_history",
         "btn.compliance.notification",
+        "btn.data_center.view",
     },
 }
 
@@ -440,6 +445,15 @@ def role_can_view_menu(role: str, active_key: str) -> bool:
         "notifications": VALID_ROLES,
         "empty": VALID_ROLES,
         "403": VALID_ROLES,
+        # T21: 数据中心菜单
+        "data_center_dashboard": VALID_ROLES,
+        "data_center_collection": ops_role,
+        "data_center_cleaning": {ROLE_SUPER_ADMIN, ROLE_OPS, ROLE_COMPLIANCE},
+        "data_center_compliance": compliance_role,
+        "data_center_grading": {ROLE_SUPER_ADMIN, ROLE_SALES},
+        "data_center_outreach": {ROLE_SUPER_ADMIN, ROLE_SALES},
+        "data_center_sales": {ROLE_SUPER_ADMIN, ROLE_SALES},
+        "data_center_opportunity": VALID_ROLES,
     }
     return role in map_.get(active_key, set())
 
