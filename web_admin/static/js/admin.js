@@ -781,6 +781,278 @@
     window.open(API_BASE + "/audit_enhanced/logs/export" + query, "_blank");
   }
 
+  // -------- T19 · 采集管理增强（动态表单 + 任务详情 + 分页明细） --------
+  // 各渠道专属表单字段（对齐底层爬虫接口配置）
+  var CHANNEL_FORM_FIELDS = {
+    generic_web: [
+      { name: "url_template", label: "URL 模板（带 {page} 占位）", type: "text", placeholder: "https://example.com/list?page={page}" },
+      { name: "site_type", label: "站点类型（bbs/news）", type: "text", placeholder: "bbs" },
+      { name: "max_depth", label: "最大爬取深度", type: "number", placeholder: "3" },
+      { name: "extract_rules", label: "抽取规则（JSON）", type: "textarea", placeholder: "{\"title\": \".post-title\"}" },
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "商机, 采购" },
+      { name: "publish_days", label: "发布日期范围（天）", type: "number", placeholder: "30" },
+      { name: "region", label: "地域", type: "text", placeholder: "全国" },
+    ],
+    short_video: [
+      { name: "platform", label: "平台（douyin/kuaishou/bilibili）", type: "text", placeholder: "douyin" },
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "创业, 副业" },
+      { name: "region", label: "地域", type: "text", placeholder: "北京" },
+      { name: "publish_days", label: "发布日期范围（天）", type: "number", placeholder: "7" },
+      { name: "min_likes", label: "最低点赞数", type: "number", placeholder: "1000" },
+      { name: "min_comments", label: "最低评论数", type: "number", placeholder: "100" },
+      { name: "min_views", label: "最低播放量", type: "number", placeholder: "10000" },
+    ],
+    xhs: [
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "探店, 美妆" },
+      { name: "region", label: "地域", type: "text", placeholder: "上海" },
+      { name: "publish_days", label: "发布日期范围（天）", type: "number", placeholder: "30" },
+      { name: "post_type", label: "内容类型（note/video）", type: "text", placeholder: "note" },
+      { name: "min_likes", label: "最低点赞数", type: "number", placeholder: "500" },
+      { name: "min_comments", label: "最低评论数", type: "number", placeholder: "50" },
+    ],
+    qa_platform: [
+      { name: "platform", label: "平台（zhihu/baidu-qa）", type: "text", placeholder: "zhihu" },
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "加盟, 开店" },
+      { name: "publish_days", label: "发布日期范围（天）", type: "number", placeholder: "30" },
+      { name: "min_answers", label: "最低回答数", type: "number", placeholder: "3" },
+      { name: "min_views", label: "最低浏览量", type: "number", placeholder: "500" },
+    ],
+    b2b_supply: [
+      { name: "platform", label: "平台（huangye88/1688）", type: "text", placeholder: "huangye88" },
+      { name: "industry", label: "行业", type: "text", placeholder: "机械制造" },
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "供应商, 批发" },
+      { name: "region", label: "地域", type: "text", placeholder: "江浙沪" },
+      { name: "filter_price", label: "价格区间（low/mid/high）", type: "text", placeholder: "mid" },
+    ],
+    bidding: [
+      { name: "bid_type", label: "公告类型（bid/win/change）", type: "text", placeholder: "bid" },
+      { name: "industry", label: "行业", type: "text", placeholder: "建筑工程" },
+      { name: "region", label: "地域", type: "text", placeholder: "广东" },
+      { name: "keywords", label: "关键词（逗号分隔）", type: "text", placeholder: "采购, 招标" },
+      { name: "publish_days", label: "发布日期范围（天）", type: "number", placeholder: "15" },
+    ],
+    company_biz: [
+      { name: "company_keywords", label: "公司关键词（逗号分隔）", type: "text", placeholder: "科技, 贸易" },
+      { name: "industry", label: "行业", type: "text", placeholder: "互联网" },
+      { name: "region", label: "地域", type: "text", placeholder: "深圳" },
+      { name: "registered_capital_min", label: "最低注册资本（万）", type: "number", placeholder: "100" },
+      { name: "establishment_years", label: "成立年限（年）", type: "number", placeholder: "3" },
+    ],
+  };
+
+  var CHANNEL_LABEL_MAP = {
+    generic_web: "通用网页/论坛",
+    short_video: "短视频",
+    xhs: "小红书",
+    qa_platform: "问答平台",
+    b2b_supply: "供需 B2B",
+    bidding: "招投标",
+    company_biz: "企业工商",
+  };
+
+  // 根据选择的渠道动态渲染专属参数表单
+  function renderChannelForm(channel) {
+    var container = document.getElementById("channel-specific-fields");
+    if (!container) return;
+    container.innerHTML = "";
+    var fields = CHANNEL_FORM_FIELDS[channel] || [];
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      var wrap = document.createElement("div");
+      wrap.className = "field-row";
+      var label = document.createElement("label");
+      label.textContent = f.label;
+      var input;
+      if (f.type === "textarea") {
+        input = document.createElement("textarea");
+        input.rows = 3;
+      } else {
+        input = document.createElement("input");
+        input.type = f.type || "text";
+      }
+      input.name = f.name;
+      input.placeholder = f.placeholder || "";
+      input.className = "text-input";
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      container.appendChild(wrap);
+    }
+  }
+
+  // 任务列表：支持按渠道/状态/关键字筛选
+  function loadSpiderFiltered() {
+    var channel = (document.getElementById("filter-channel") || {}).value || "";
+    var status = (document.getElementById("filter-status") || {}).value || "";
+    var keyword = (document.getElementById("filter-keyword") || {}).value || "";
+    var url = "/spider/tasks?channel=" + encodeURIComponent(channel) +
+              "&status=" + encodeURIComponent(status) +
+              "&keyword=" + encodeURIComponent(keyword);
+    api(url, { method: "GET" }).then(function (j) {
+      if (!j) return;
+      var body = document.getElementById("tasks-body");
+      if (!body) return;
+      if (!Array.isArray(j.items) || j.items.length === 0) {
+        body.innerHTML = '<tr><td colspan="8" class="empty">暂无任务</td></tr>';
+        return;
+      }
+      var html = "";
+      for (var k = 0; k < j.items.length; k++) {
+        var item = j.items[k];
+        var ch = item.channel || "-";
+        var chLabel = CHANNEL_LABEL_MAP[ch] || ch;
+        var st = item.status || "READY";
+        html += '<tr><td>' + (item.job_id || "") + '</td>' +
+          '<td>' + chLabel + '</td>' +
+          '<td>' + (item.task_name || item.spider_name || "") + '</td>' +
+          '<td><span class="task-status ' + st + '">' + st + '</span></td>' +
+          '<td>' + (item.success || 0) + '</td>' +
+          '<td>' + (item.failed || 0) + '</td>' +
+          '<td>' + (item.next_run || "-") + '</td>' +
+          '<td>' +
+          '<a href="/admin/spider/detail/' + (item.job_id || "") + '" class="btn btn-sm">详情</a> ' +
+          '<button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runTask(\'' + (item.job_id || "") + '\')">启动</button> ' +
+          '<button class="btn btn-sm" data-requires-permission="btn.spider.pause" onclick="admin.pauseTask(\'' + (item.job_id || "") + '\')">暂停</button> ' +
+          '<button class="btn btn-sm" data-requires-permission="btn.spider.resume" onclick="admin.resumeTask(\'' + (item.job_id || "") + '\')">恢复</button> ' +
+          '<button class="btn btn-sm" data-requires-permission="btn.spider.retry" onclick="admin.retryTask(\'' + (item.job_id || "") + '\')">重试</button> ' +
+          '<button class="btn btn-sm" data-requires-permission="btn.spider.terminate" onclick="admin.terminateTask(\'' + (item.job_id || "") + '\')">终止</button> ' +
+          '<button class="btn btn-sm btn-danger" data-requires-permission="btn.spider.delete" onclick="admin.deleteTask(\'' + (item.job_id || "") + '\')">删除</button>' +
+          '</td></tr>';
+      }
+      body.innerHTML = html;
+    });
+  }
+
+  // 任务详情页渲染（配置 + 进度 + 明细 + 日志）
+  function loadSpiderDetail(jobId) {
+    api("/spider/task/" + encodeURIComponent(jobId), { method: "GET" }).then(function (j) {
+      if (!j || !j.job) { alert("任务不存在"); return; }
+      var job = j.job;
+      var ch = job.channel || "-";
+      var chLabel = CHANNEL_LABEL_MAP[ch] || ch;
+      var cfgEl = document.getElementById("detail-config");
+      if (cfgEl) {
+        var kvHtml = "";
+        var keys = Object.keys(job);
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var val = job[key];
+          if (typeof val === "object") val = JSON.stringify(val);
+          kvHtml += '<div class="kv"><div class="k">' + key + '</div><div class="v">' + (val != null ? String(val) : "-") + '</div></div>';
+        }
+        cfgEl.innerHTML = kvHtml;
+      }
+      // 进度统计
+      var progressEl = document.getElementById("detail-progress");
+      if (progressEl) {
+        var success = parseInt(job.success || 0, 10);
+        var failed = parseInt(job.failed || 0, 10);
+        var risk = parseInt(job.risk_blocked || 0, 10);
+        var max = parseInt(job.max_items || 0, 10) || (success + failed + risk + 1);
+        var pct = Math.min(100, Math.round((success + failed + risk) * 100 / max));
+        var st = job.status || "READY";
+        progressEl.innerHTML =
+          '<div class="progress-stats">' +
+            '<div class="progress-item"><div class="label">状态</div><div class="value"><span class="task-status ' + st + '">' + st + '</span></div></div>' +
+            '<div class="progress-item"><div class="label">采集成功</div><div class="value success">' + success + '</div></div>' +
+            '<div class="progress-item"><div class="label">采集失败</div><div class="value failure">' + failed + '</div></div>' +
+            '<div class="progress-item"><div class="label">风控拦截</div><div class="value warn">' + risk + '</div></div>' +
+            '<div class="progress-item"><div class="label">进度</div><div class="value">' + pct + '%</div></div>' +
+          '</div>' +
+          '<div class="progress-bar"><div class="progress-inner" style="width:' + pct + '%"></div></div>';
+      }
+      // 日志按钮与分页明细
+      loadTaskItems(jobId, 1, 20);
+      refreshTaskLogs(jobId);
+    });
+  }
+
+  function terminateTask(jobId) {
+    if (!confirm("确认终止任务？此操作不可恢复。")) return;
+    api("/spider/task/" + encodeURIComponent(jobId) + "/terminate", { method: "POST" }).then(function (j) {
+      alert((j && j.msg) || "已终止");
+      if (typeof loadSpiderFiltered === "function") loadSpiderFiltered();
+    });
+  }
+
+  function retryTask(jobId) {
+    if (!confirm("确认从上次中断位置重试任务？")) return;
+    api("/spider/task/" + encodeURIComponent(jobId) + "/retry", { method: "POST" }).then(function (j) {
+      alert((j && j.msg) || "已重试");
+      if (typeof loadSpiderDetail === "function") {
+        loadSpiderDetail(jobId);
+      }
+    });
+  }
+
+  function loadTaskItems(jobId, page, pageSize) {
+    page = page || 1;
+    pageSize = pageSize || 20;
+    var url = "/spider/task/" + encodeURIComponent(jobId) + "/items?page=" + page + "&page_size=" + pageSize;
+    api(url, { method: "GET" }).then(function (j) {
+      var body = document.getElementById("items-body");
+      if (!body) return;
+      if (!j || !Array.isArray(j.items) || j.items.length === 0) {
+        body.innerHTML = '<tr><td colspan="5" class="empty">暂无采集明细</td></tr>';
+        document.getElementById("items-pagination").innerHTML = "";
+        return;
+      }
+      var html = "";
+      for (var k = 0; k < j.items.length; k++) {
+        var it = j.items[k];
+        html += '<tr>' +
+          '<td>' + (it.id || "") + '</td>' +
+          '<td><div class="content">' + (it.title || "") + '</div><div class="meta">' + (it.source || "") + '</div></td>' +
+          '<td data-mask="author">' + (it.author || "") + '</td>' +
+          '<td data-mask="phone">' + (it.phone || "") + '</td>' +
+          '<td data-mask="email">' + (it.email || "") + '</td>' +
+          '</tr>';
+      }
+      body.innerHTML = html;
+      // 分页器
+      var total = j.total || 0;
+      var cur = j.page || 1;
+      var size = j.page_size || 20;
+      var totalPages = Math.max(1, Math.ceil(total / size));
+      var pagEl = document.getElementById("items-pagination");
+      if (pagEl) {
+        pagEl.innerHTML =
+          '共 ' + total + ' 条 · 第 ' + cur + ' / ' + totalPages + ' 页 ' +
+          (cur > 1 ? '<button class="btn btn-sm" onclick="admin.loadTaskItems(\'' + jobId + '\',' + (cur - 1) + ',' + size + ')">上一页</button> ' : '') +
+          (cur < totalPages ? '<button class="btn btn-sm" onclick="admin.loadTaskItems(\'' + jobId + '\',' + (cur + 1) + ',' + size + ')">下一页</button>' : '');
+      }
+      // 脱敏：使用原有 mask 函数
+      try { autoMask(document.getElementById("items-body")); } catch (e) {}
+    });
+  }
+
+  // 任务日志自动刷新
+  var _taskLogTimer = null;
+  function refreshTaskLogs(jobId) {
+    if (_taskLogTimer) clearInterval(_taskLogTimer);
+    var logsEl = document.getElementById("task-logs");
+    if (!logsEl) return;
+    function update() {
+      api("/spider/task/" + encodeURIComponent(jobId) + "/logs?limit=100", { method: "GET" }).then(function (j) {
+        if (!j || !Array.isArray(j.items)) return;
+        var html = "";
+        for (var i = 0; i < j.items.length; i++) {
+          var line = String(j.items[i]);
+          var cls = "log-info";
+          if (/error|失败|ERR/i.test(line)) cls = "log-error";
+          else if (/warn|风控|WARN/i.test(line)) cls = "log-warn";
+          else if (/success|完成|SUCCESS/i.test(line)) cls = "log-success";
+          html += '<div class="' + cls + '">' + line + '</div>';
+        }
+        logsEl.innerHTML = html || '<div class="log-warn">暂无日志</div>';
+      });
+    }
+    update();
+    _taskLogTimer = setInterval(update, 5000);
+  }
+  function stopTaskLogRefresh() {
+    if (_taskLogTimer) { clearInterval(_taskLogTimer); _taskLogTimer = null; }
+  }
+
   // -------- 账号管理（新 API） --------
   function loadAccounts() {
     fetch(API_BASE + "/accounts", { headers: { "X-Requested-With": "XMLHttpRequest" } })
@@ -956,6 +1228,16 @@
     nextAuditPage: nextAuditPage,
     prevAuditPage: prevAuditPage,
     exportAuditLogs: exportAuditLogs,
+
+    // T19 采集管理增强
+    renderChannelForm: renderChannelForm,
+    loadSpiderFiltered: loadSpiderFiltered,
+    loadSpiderDetail: loadSpiderDetail,
+    terminateTask: terminateTask,
+    retryTask: retryTask,
+    loadTaskItems: loadTaskItems,
+    refreshTaskLogs: refreshTaskLogs,
+    stopTaskLogRefresh: stopTaskLogRefresh,
 
     // 账号管理
     loadAccounts: loadAccounts,

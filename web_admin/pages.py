@@ -278,24 +278,117 @@ def dashboard_page(session: dict | None = Depends(get_current_admin)):
 @router.get("/spider", response_class=HTMLResponse)
 def spider_page(session: dict | None = Depends(get_current_admin)):
     body = """
+    <section class="panel channel-filter-row">
+      <h3>🗂 7 大渠道快速入口</h3>
+      <div class="channel-cards" id="channel-cards">
+        <a class="channel-card" data-channel="generic_web" href="/admin/spider?channel=generic_web">
+          <span class="channel-icon">🌐</span>
+          <span class="channel-title">通用网页/论坛</span>
+          <span class="channel-desc">门户/论坛/BBS 抓取</span>
+        </a>
+        <a class="channel-card" data-channel="short_video" href="/admin/spider?channel=short_video">
+          <span class="channel-icon">🎬</span>
+          <span class="channel-title">短视频</span>
+          <span class="channel-desc">抖音/快手/视频号</span>
+        </a>
+        <a class="channel-card" data-channel="xhs" href="/admin/spider?channel=xhs">
+          <span class="channel-icon">📕</span>
+          <span class="channel-title">小红书</span>
+          <span class="channel-desc">笔记/视频/点赞筛选</span>
+        </a>
+        <a class="channel-card" data-channel="qa_platform" href="/admin/spider?channel=qa_platform">
+          <span class="channel-icon">❓</span>
+          <span class="channel-title">问答平台</span>
+          <span class="channel-desc">知乎/百度知道</span>
+        </a>
+        <a class="channel-card" data-channel="b2b_supply" href="/admin/spider?channel=b2b_supply">
+          <span class="channel-icon">🏭</span>
+          <span class="channel-title">供需 B2B</span>
+          <span class="channel-desc">阿里/慧聪</span>
+        </a>
+        <a class="channel-card" data-channel="bidding" href="/admin/spider?channel=bidding">
+          <span class="channel-icon">📋</span>
+          <span class="channel-title">招投标</span>
+          <span class="channel-desc">政府采购/企业采购</span>
+        </a>
+        <a class="channel-card" data-channel="company_biz" href="/admin/spider?channel=company_biz">
+          <span class="channel-icon">🏢</span>
+          <span class="channel-title">企业工商</span>
+          <span class="channel-desc">企查查/天眼查/工商公示</span>
+        </a>
+      </div>
+    </section>
+
     <section class="panel">
-      <h3>➕ 新增 / 编辑任务</h3>
-      <form class="row-form" data-requires-permission="btn.spider.create" onsubmit="return admin.createSpiderTask(event)">
-        <label>任务 ID <input type="text" name="job_id" placeholder="例如 spider_hourly"/></label>
-        <label>爬虫名称 <select id="spider-name-select" name="spider_name"><option>（加载中）</option></select></label>
+      <h3>➕ 新建采集任务</h3>
+      <div class="row">
+        <label>渠道类型 <select id="task-channel-select" name="channel" data-requires-permission="btn.spider.create">
+          <option value="">请选择渠道</option>
+          <option value="generic_web">通用网页/论坛</option>
+          <option value="short_video">短视频</option>
+          <option value="xhs">小红书</option>
+          <option value="qa_platform">问答平台</option>
+          <option value="b2b_supply">供需 B2B</option>
+          <option value="bidding">招投标</option>
+          <option value="company_biz">企业工商</option>
+        </select></label>
+      </div>
+      <form class="row-form" id="task-create-form" data-requires-permission="btn.spider.create" onsubmit="return admin.createSpiderTask(event)">
+        <input type="hidden" name="channel" id="task-channel-hidden"/>
+        <label>任务 ID <input type="text" name="job_id" placeholder="例如 sp_daily_001"/></label>
+        <label>任务名称 <input type="text" name="task_name" placeholder="任务描述"/></label>
+        <label>速度档位 (1-5) <input type="number" name="speed_level" value="3" min="1" max="5"/></label>
+        <label>采集上限 <input type="number" name="max_items" value="500" min="1"/></label>
+        <label>定时模式 <select name="schedule_mode"><option value="off">手动</option><option value="hourly">每小时</option><option value="daily">每天</option></select></label>
         <label>Cron <input type="text" name="cron" value="*/30 * * * *"/></label>
-        <label>关键词 <input type="text" name="keywords" value="商机,采购,ERP"/></label>
-        <label>最大页数 <input type="number" name="max_pages" value="20" min="1"/></label>
+        <label>时间范围 <input type="text" name="time_range" placeholder="例如 最近7天"/></label>
+        <div id="channel-specific-fields" style="width:100%;margin-top:12px;">
+          <span class="muted">请先选择渠道类型以显示专属参数</span>
+        </div>
         <button class="btn btn-primary" type="submit" data-requires-permission="btn.spider.create">保存任务</button>
       </form>
     </section>
+
     <section class="panel">
-      <h3>📋 已登记任务</h3>
+      <h3>🔎 任务筛选</h3>
+      <div class="row">
+        <label>状态 <select id="filter-status">
+          <option value="">全部</option>
+          <option value="DRAFT">待审核</option>
+          <option value="READY">待启动</option>
+          <option value="RUNNING">运行中</option>
+          <option value="PAUSED">已暂停</option>
+          <option value="COMPLETED">已完成</option>
+          <option value="FAILED">已失败</option>
+          <option value="TERMINATED">已终止</option>
+        </select></label>
+        <label>渠道 <select id="filter-channel">
+          <option value="">全部</option>
+          <option value="generic_web">通用网页/论坛</option>
+          <option value="short_video">短视频</option>
+          <option value="xhs">小红书</option>
+          <option value="qa_platform">问答平台</option>
+          <option value="b2b_supply">供需 B2B</option>
+          <option value="bidding">招投标</option>
+          <option value="company_biz">企业工商</option>
+        </select></label>
+        <label>任务名/ID <input type="text" id="filter-keyword" placeholder="模糊搜索"/></label>
+        <button class="btn btn-primary" onclick="admin.loadSpiderFiltered()">应用筛选</button>
+        <button class="btn" onclick="admin.loadSpiderFiltered()">刷新</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>📋 采集任务列表</h3>
       <table class="data-table" id="tasks-table">
-        <thead><tr><th>任务 ID</th><th>爬虫</th><th>Cron</th><th>关键词</th><th>状态</th><th>下次运行</th><th>操作</th></tr></thead>
-        <tbody id="tasks-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        <thead><tr>
+          <th>任务 ID</th><th>渠道</th><th>任务名</th><th>状态</th>
+          <th>采集数</th><th>失败数</th><th>下一次运行</th><th>操作</th>
+        </tr></thead>
+        <tbody id="tasks-body"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
       </table>
     </section>
+
     <section class="panel">
       <h3>📖 抓取日志</h3>
       <div class="row">
@@ -304,8 +397,93 @@ def spider_page(session: dict | None = Depends(get_current_admin)):
       </div>
       <pre id="logs-out" class="code-out">(空)</pre>
     </section>
+
+    <script>
+      (function () {
+        // 1) 渠道选择动态渲染表单字段
+        var sel = document.getElementById("task-channel-select");
+        var hidden = document.getElementById("task-channel-hidden");
+        if (sel && hidden && typeof admin !== "undefined" && admin.renderChannelForm) {
+          sel.addEventListener("change", function () {
+            hidden.value = sel.value;
+            admin.renderChannelForm(sel.value);
+          });
+        }
+        // 2) URL 参数 ?channel=xxx 预选
+        var m = location.search.match(/[?&]channel=([^&]+)/);
+        if (m && sel) {
+          sel.value = decodeURIComponent(m[1]);
+          if (hidden) hidden.value = sel.value;
+          if (typeof admin !== "undefined" && admin.renderChannelForm) admin.renderChannelForm(sel.value);
+        }
+        // 3) 初始加载任务列表
+        if (typeof admin !== "undefined" && admin.loadSpiderFiltered) admin.loadSpiderFiltered();
+      })();
+    </script>
 """
     return _render_with_permission("spider", "btn.spider.view", body, session)
+
+
+# ---------------------------------------------------------------------------
+# 新增：任务详情与实时监控页
+# ---------------------------------------------------------------------------
+@router.get("/spider/{job_id}", response_class=HTMLResponse)
+def spider_detail_page(job_id: str, session: dict | None = Depends(get_current_admin)):
+    body = f"""
+    <section class="panel task-detail-config">
+      <h3>⚙️ 任务基础配置（只读）</h3>
+      <div id="detail-config" class="task-detail-config-grid">
+        <span class="muted">正在加载任务 {job_id} 的基础配置…</span>
+      </div>
+    </section>
+
+    <section class="panel task-detail-progress">
+      <h3>📊 采集进度</h3>
+      <div id="detail-progress">
+        <span class="muted">正在加载采集进度…</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>🔧 任务操作</h3>
+      <div class="row">
+        <button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runTask('{job_id}')">立即运行</button>
+        <button class="btn btn-sm" data-requires-permission="btn.spider.pause" onclick="admin.pauseTask('{job_id}')">暂停</button>
+        <button class="btn btn-sm" data-requires-permission="btn.spider.resume" onclick="admin.resumeTask('{job_id}')">恢复</button>
+        <button class="btn btn-sm" data-requires-permission="btn.spider.retry" onclick="admin.retryTask('{job_id}')">重试（断点续爬）</button>
+        <button class="btn btn-sm" data-requires-permission="btn.spider.terminate" onclick="admin.terminateTask('{job_id}')">终止任务</button>
+        <button class="btn btn-sm btn-danger" data-requires-permission="btn.spider.delete" onclick="admin.deleteTask('{job_id}')">删除任务</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>📝 原始数据采集明细（自动脱敏）</h3>
+      <table class="data-table spider-item-table" id="items-table">
+        <thead><tr>
+          <th>ID</th><th>标题/内容</th><th>作者</th><th>手机</th><th>邮箱</th>
+        </tr></thead>
+        <tbody id="items-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+      </table>
+      <div class="row" style="margin-top:12px;" id="items-pagination"></div>
+    </section>
+
+    <section class="panel">
+      <h3>📜 任务运行日志（自动刷新）</h3>
+      <div id="task-logs" class="spider-logs">(空)</div>
+    </section>
+
+    <script>
+      (function () {
+        if (typeof admin !== "undefined" && admin.loadSpiderDetail) {
+          admin.loadSpiderDetail("{job_id}");
+        }
+        window.addEventListener("beforeunload", function () {
+          if (admin && admin.stopTaskLogRefresh) admin.stopTaskLogRefresh();
+        });
+      })();
+    </script>
+
+    return _render_with_permission("spider_detail", "btn.spider.view", body, session)
 
 
 @router.get("/leads", response_class=HTMLResponse)

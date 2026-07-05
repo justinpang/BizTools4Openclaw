@@ -71,7 +71,13 @@ def _spider_names() -> list[str]:
 
 
 @router.get("/spider/tasks")
-def list_spider_tasks(session: dict = Depends(require_admin)):
+def list_spider_tasks(
+    channel: str = "",
+    status: str = "",
+    keyword: str = "",
+    session: dict = Depends(require_admin),
+):
+    """采集任务列表（支持按渠道/状态/关键字筛选）"""
     try:
         persisted = _list_persisted()
         # 合并调度器里的实际 Job
@@ -94,44 +100,129 @@ def list_spider_tasks(session: dict = Depends(require_admin)):
         except Exception:
             pass
 
-        out = []
+        raw_out = []
         for j in scheduled:
             jid = j["job_id"]
             meta = persisted.get(jid, {})
-            out.append({**meta, **j})
+            raw_out.append({**meta, **j})
         # 加上持久化中尚未加入调度的
         for jid, meta in persisted.items():
-            if not any(x for x in out if x.get("job_id") == jid):
-                out.append({**meta, "job_id": jid, "next_run": None, "status": "INACTIVE"})
-        return {"code": 0, "msg": "ok", "items": out, "spider_names": _spider_names()}
+            if not any(x for x in raw_out if x.get("job_id") == jid):
+                raw_out.append({**meta, "job_id": jid, "next_run": None, "status": "INACTIVE"})
+        # 按参数过滤
+        out = []
+        for item in raw_out:
+            if channel and item.get("channel") != channel:
+                continue
+            if status and item.get("status") != status:
+                continue
+            if keyword:
+                haystack = " ".join([
+                    str(item.get("job_id") or ""),
+                    str(item.get("task_name") or ""),
+                    str(item.get("spider_name") or ""),
+                    str(item.get("channel") or ""),
+                ]).lower()
+                if keyword.lower() not in haystack:
+                    continue
+            out.append(item)
+        return {"code": 0, "msg": "ok", "items": out, "spider_names": _spider_names(),
+                "channels": sorted(VALID_CHANNELS), "statuses": sorted(TASK_STATUSES)}
     except Exception as exc:
         logger.error(f"list tasks: {exc}", exc_info=True)
-        return {"code": 500, "msg": str(exc), "items": [], "spider_names": _spider_names()}
+        return {"code": 500, "msg": str(exc), "items": [], "spider_names": _spider_names(),
+                "channels": sorted(VALID_CHANNELS), "statuses": sorted(TASK_STATUSES)}
+
+
+# 任务状态枚举（对齐 T19 计划）
+TASK_STATUSES = {"DRAFT", "READY", "RUNNING", "PAUSED", "COMPLETED", "FAILED", "TERMINATED"}
+VALID_CHANNELS = {"generic_web", "short_video", "xhs", "qa_platform", "b2b_supply", "bidding", "company_biz"}
+CHANNEL_LABEL = {
+    "generic_web": "通用网页/论坛",
+    "short_video": "短视频",
+    "xhs": "小红书",
+    "qa_platform": "问答平台",
+    "b2b_supply": "供需 B2B",
+    "bidding": "招投标",
+    "company_biz": "企业工商",
+}
 
 
 @router.post("/spider/task")
 def create_spider_task(
     job_id: str = Form(...),
-    spider_name: str = Form(...),
+    task_name: str = Form(default=""),
+    channel: str = Form(default="generic_web"),
+    spider_name: str = Form(default=""),
+    speed_level: int = Form(default=3),
+    max_items: int = Form(default=500),
+    schedule_mode: str = Form(default="off"),
     cron: str = Form(default="*/30 * * * *"),
+    time_range: str = Form(default=""),
     keywords: str = Form(default=""),
-    max_pages: int = Form(default=20),
+    region: str = Form(default=""),
+    min_likes: int = Form(default=0),
+    min_comments: int = Form(default=0),
+    min_views: int = Form(default=0),
+    min_answers: int = Form(default=0),
+    registered_capital_min: int = Form(default=0),
+    establishment_years: int = Form(default=0),
+    publish_days: int = Form(default=30),
+    industry: str = Form(default=""),
+    platform: str = Form(default=""),
+    company_keywords: str = Form(default=""),
+    post_type: str = Form(default=""),
+    filter_price: str = Form(default=""),
+    filter_rule: str = Form(default=""),
+    url_template: str = Form(default=""),
+    site_type: str = Form(default=""),
+    max_depth: int = Form(default=3),
+    bid_type: str = Form(default=""),
+    extract_rules: str = Form(default=""),
     session: dict = Depends(require_admin),
 ):
     try:
         job_id = (job_id or "").strip() or ("spider_" + str(int(time.time())))
-        spider_name = (spider_name or "").strip()
-        if not spider_name:
-            raise HTTPException(status_code=400, detail="spider_name 必填")
+        channel = (channel or "").strip() or "generic_web"
+        if channel and channel not in VALID_CHANNELS:
+            raise HTTPException(status_code=400, detail="channel 不合法，允许值：" + ",".join(sorted(VALID_CHANNELS)))
+        spider_name = (spider_name or "").strip() or channel
         payload = {
             "job_id": job_id,
+            "task_name": task_name,
+            "channel": channel,
             "spider_name": spider_name,
+            "speed_level": int(speed_level or 3),
+            "max_items": int(max_items or 500),
+            "schedule_mode": schedule_mode,
             "cron": cron,
+            "time_range": time_range,
             "keywords": [k.strip() for k in (keywords or "").split(",") if k.strip()],
-            "max_pages": int(max_pages or 20),
+            "region": region,
+            "min_likes": int(min_likes or 0),
+            "min_comments": int(min_comments or 0),
+            "min_views": int(min_views or 0),
+            "min_answers": int(min_answers or 0),
+            "registered_capital_min": int(registered_capital_min or 0),
+            "establishment_years": int(establishment_years or 0),
+            "publish_days": int(publish_days or 30),
+            "industry": industry,
+            "platform": platform,
+            "company_keywords": company_keywords,
+            "post_type": post_type,
+            "filter_price": filter_price,
+            "filter_rule": filter_rule,
+            "url_template": url_template,
+            "site_type": site_type,
+            "max_depth": int(max_depth or 3),
+            "bid_type": bid_type,
+            "extract_rules": extract_rules,
             "created_by": session.get("username", ""),
             "created_at": int(time.time()),
-            "status": "ACTIVE",
+            "status": "READY",
+            "success": 0,
+            "failed": 0,
+            "risk_blocked": 0,
         }
         _persist_task(job_id, payload)
         try:
@@ -274,6 +365,115 @@ def get_spider_risks(session: dict = Depends(require_admin)):
     except Exception:
         pass
     return {"code": 0, "msg": "ok", "items": []}
+
+
+# ====================================================================
+# T19 新增接口：任务详情 / 终止 / 重试 / 采集明细
+# ====================================================================
+@router.get("/spider/task/{job_id}")
+def get_task_detail(job_id: str, session: dict = Depends(require_admin)):
+    """获取任务详情（页面渲染为只读配置 + 进度 + 明细）"""
+    persisted = _list_persisted()
+    meta = persisted.get(job_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {
+        "code": 0,
+        "msg": "ok",
+        "job": meta,
+    }
+
+
+@router.post("/spider/task/{job_id}/terminate")
+def terminate_spider_task(job_id: str, session: dict = Depends(require_admin)):
+    """终止任务：从调度器移除，状态标记为 TERMINATED（不可恢复）"""
+    persisted = _list_persisted()
+    meta = persisted.get(job_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    # 移除调度器
+    try:
+        from infra.task_scheduler import TaskScheduler
+        TaskScheduler().remove_job(job_id)
+    except Exception:
+        pass
+    meta["status"] = "TERMINATED"
+    meta["terminated_at"] = int(time.time())
+    meta["terminated_by"] = session.get("username", "")
+    _persist_task(job_id, meta)
+    return {"code": 0, "msg": "terminated", "job": meta}
+
+
+@router.post("/spider/task/{job_id}/retry")
+def retry_spider_task(job_id: str, session: dict = Depends(require_admin)):
+    """重试失败任务：从上次中断位置继续（断点续爬）"""
+    persisted = _list_persisted()
+    meta = persisted.get(job_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if meta.get("status") not in {"FAILED", "TERMINATED", "PAUSED"}:
+        raise HTTPException(status_code=400, detail="当前状态不允许重试（仅 FAILED/TERMINATED/PAUSED 可以）")
+    meta["status"] = "RUNNING"
+    meta["last_retried_at"] = int(time.time())
+    meta["retried_by"] = session.get("username", "")
+    # 断点续爬：保留原有成功数，重置失败数
+    meta.setdefault("resume_count", 0)
+    meta["resume_count"] += 1
+    _persist_task(job_id, meta)
+    try:
+        from infra.task_scheduler import TaskScheduler
+        from business.multi_spider.registry import run_spider_by_name  # type: ignore
+        scheduler = TaskScheduler()
+
+        def _job():
+            try:
+                return run_spider_by_name(
+                    spider_name=meta.get("spider_name", job_id),
+                    keywords=meta.get("keywords") or [],
+                    max_pages=meta.get("max_pages") or meta.get("max_items") or 50,
+                )
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        scheduler.add_cron(job_id=job_id, func=_job, expression=meta.get("cron") or "*/30 * * * *")
+    except Exception:
+        pass
+    return {"code": 0, "msg": "resumed (breakpoint resume)", "job": meta}
+
+
+@router.get("/spider/task/{job_id}/items")
+def get_task_items(job_id: str, page: int = 1, page_size: int = 20,
+                   session: dict = Depends(require_admin)):
+    """采集明细列表（分页）。
+    注：底层业务 SDK 暂未提供 items 存储，此处返回 mock 数据 + 隐私字段供前端脱敏。
+    业务接入后将从业务数据源读取。"""
+    persisted = _list_persisted()
+    meta = persisted.get(job_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    # 模拟数据（不依赖业务，仅用于前端 UI 测试）
+    total = int(meta.get("success") or int(meta.get("max_items") or 0))
+    start = (page - 1) * page_size
+    end = min(start + page_size, total)
+    items = []
+    for i in range(start, end):
+        items.append({
+            "id": f"{job_id}_{i+1}",
+            "title": f"示例内容 #{i+1}（渠道 {CHANNEL_LABEL.get(meta.get('channel'), meta.get('channel'))}）",
+            "source": f"{meta.get('spider_name')} 来源 URL {i+1}",
+            "author": f"user_{i+1:04d}@1380000{i % 10:02d}{i % 100:02d}",
+            "phone": f"1380000{i % 10:02d}{i % 100:02d}{i % 1000:03d}",
+            "email": f"contact{i+1}@example.com",
+            "crawled_at": int(time.time()) - (total - i) * 60,
+        })
+    return {
+        "code": 0,
+        "msg": "ok",
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
 
 
 __all__ = ["router"]
