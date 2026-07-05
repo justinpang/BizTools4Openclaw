@@ -124,6 +124,19 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '      <section class="page-body">\n'
         '        ' + body_html + '\n'
         '      </section>\n'
+        # T22: 全局手工操作弹窗
+        '      <div class="manual-dialog-mask" id="manual-dialog-mask" style="display:none;">\n'
+        '        <div class="manual-dialog" id="manual-dialog">\n'
+        '          <div class="manual-dialog-head"><span id="manual-dialog-title">操作确认</span><span class="manual-dialog-close" onclick="admin.closeManualDialog()">x</span></div>\n'
+        '          <div class="manual-dialog-body" id="manual-dialog-body"></div>\n'
+        '          <div class="manual-dialog-foot">\n'
+        '            <button class="btn" onclick="admin.closeManualDialog()">取消</button>\n'
+        '            <button class="btn btn-primary" id="manual-dialog-submit" onclick="admin.submitManualDialog()">确认执行</button>\n'
+        '          </div>\n'
+        '        </div>\n'
+        '      </div>\n'
+        # T22: toast 通知浮层
+        '      <div class="manual-toast" id="manual-toast" style="display:none;"></div>\n'
         '    </main>\n'
         '  </div>\n'
         '<script id="admin-init-json" type="application/json">' + init_json + '</script>\n'
@@ -1020,6 +1033,12 @@ def _stage_detail_page_body(stage_key: str, stage_title: str, stage_desc: str,
         '    <label>Keyword <input type="text" id="' + body_id + '-filter-keyword" placeholder="Search..."/></label>',
         '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Apply</button>',
         '    <button class="btn btn-sm" onclick="admin.loadStageList(\'' + stage_key + '\',\'' + body_id + '\',1)">Refresh</button>',
+        '  </div>',
+        '</section>',
+        # T22: 阶段操作工具栏
+        '<section class="panel" data-stage="' + stage_key + '">',
+        '  <h3>[Manual Ops] 阶段手工管控 手工操作</h3>',
+        '  <div class="row" data-stage-actions="' + stage_key + '" style="gap:8px;flex-wrap:wrap;">',
         '  </div>',
         '</section>',
         # 明细表格

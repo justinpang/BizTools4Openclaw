@@ -341,6 +341,342 @@
   };
 
   /* ---------------------------------------------------------------------- *
+   * T22.0) 操作定义 & 渲染工具
+   * ---------------------------------------------------------------------- */
+  var STAGE_OPS = {
+    collection: [
+      { key: "task_speed", title: "调整采集速度", method: "POST", url: "/api/admin/data_center/manual/collection/task-speed",
+        fields: [{ name: "job_id", label: "任务ID", placeholder: "task-xxxx", required: true },
+                  { name: "speed_level", label: "速度等级(1-5)", type: "number", value: "3" }] },
+      { key: "task_keywords", title: "追加关键词", method: "POST", url: "/api/admin/data_center/manual/collection/task-keywords",
+        fields: [{ name: "job_id", label: "任务ID", placeholder: "task-xxxx", required: true },
+                  { name: "keywords", label: "关键词(逗号分隔)", placeholder: "CRM,SaaS,企业服务", required: true }] },
+      { key: "item_status", title: "标记条目有效/无效", method: "POST", url: "/api/admin/data_center/manual/collection/item-status",
+        fields: [{ name: "item_id", label: "条目ID", required: true },
+                  { name: "status", label: "状态", type: "select", options: ["valid", "invalid"], value: "valid" }] },
+      { key: "push_cleaning", title: "推送进入清洗", method: "POST", url: "/api/admin/data_center/manual/collection/push-to-cleaning",
+        fields: [{ name: "job_id", label: "任务ID", placeholder: "task-xxxx", required: true },
+                  { name: "item_ids", label: "条目ID(逗号分隔)", placeholder: "留空=全部" }] },
+      { key: "batch_run", title: "批量启动任务", method: "POST", url: "/api/admin/data_center/manual/collection/batch-run",
+        fields: [{ name: "job_ids", label: "任务ID列表(逗号分隔)", placeholder: "task-a,task-b", required: true }] },
+      { key: "batch_pause", title: "批量暂停任务", method: "POST", url: "/api/admin/data_center/manual/collection/batch-pause",
+        fields: [{ name: "job_ids", label: "任务ID列表(逗号分隔)", placeholder: "task-a,task-b", required: true }] }
+    ],
+    cleaning: [
+      { key: "reclean", title: "重新清洗", method: "POST", url: "/api/admin/data_center/manual/cleaning/reclean",
+        fields: [{ name: "lead_ids", label: "商机ID(逗号分隔)", placeholder: "lead-1,lead-2", required: true }] },
+      { key: "edit_entity", title: "人工修正实体", method: "PATCH", url: "/api/admin/data_center/manual/cleaning/EDIT-ITEM-ID",
+        dynamic_item_id: true, fields: [
+          { name: "company", label: "企业名称" },
+          { name: "contact", label: "联系方式" },
+          { name: "tags", label: "需求标签(逗号分隔)" }
+        ] },
+      { key: "mark_normal", title: "异常标记正常", method: "POST", url: "/api/admin/data_center/manual/cleaning/EDIT-ITEM-ID/mark-normal",
+        dynamic_item_id: true, fields: [] }
+    ],
+    compliance: [
+      { key: "force_pass", title: "[高危]强制放行", risk: "high", method: "POST", url: "/api/admin/data_center/manual/compliance/EDIT-ITEM-ID/force-pass",
+        dynamic_item_id: true, fields: [] },
+      { key: "mark_false_positive", title: "标记误判", method: "POST", url: "/api/admin/data_center/manual/compliance/EDIT-ITEM-ID/mark-false-positive",
+        dynamic_item_id: true, fields: [] },
+      { key: "reject_permanent", title: "[高危]永久驳回", risk: "high", method: "POST", url: "/api/admin/data_center/manual/compliance/EDIT-ITEM-ID/reject-permanent",
+        dynamic_item_id: true, fields: [] },
+      { key: "update_grade", title: "调整合规等级", method: "PATCH", url: "/api/admin/data_center/manual/compliance/EDIT-ITEM-ID/grade",
+        dynamic_item_id: true, fields: [
+          { name: "compliance_grade", label: "等级", type: "select", options: ["A", "B", "C", "D"], value: "B" }
+        ] },
+      { key: "mask_rule", title: "调整脱敏规则", method: "PATCH", url: "/api/admin/data_center/manual/compliance/EDIT-ITEM-ID/mask-rule",
+        dynamic_item_id: true, fields: [
+          { name: "mask_level", label: "脱敏级别", type: "select", options: ["default", "strict", "plaintext"], value: "default" }
+        ] }
+    ],
+    grading: [
+      { key: "grade", title: "调整商机等级", method: "PATCH", url: "/api/admin/data_center/manual/grading/EDIT-ITEM-ID/grade",
+        dynamic_item_id: true, fields: [
+          { name: "grade", label: "等级", type: "select", options: ["A", "B", "C", "D"], value: "B" }
+        ] },
+      { key: "score", title: "修改打分", method: "PATCH", url: "/api/admin/data_center/manual/grading/EDIT-ITEM-ID/score",
+        dynamic_item_id: true, fields: [
+          { name: "score", label: "分数(0.0-5.0)", type: "number", value: "3.0" }
+        ] },
+      { key: "tags", title: "补充行业/地域标签", method: "PATCH", url: "/api/admin/data_center/manual/grading/EDIT-ITEM-ID/tags",
+        dynamic_item_id: true, fields: [
+          { name: "tags", label: "标签(逗号分隔)", placeholder: "SaaS,北京,金融" }
+        ] },
+      { key: "blacklist_add", title: "[高危]加入黑名单", risk: "high", method: "POST", url: "/api/admin/data_center/manual/grading/EDIT-ITEM-ID/blacklist/add",
+        dynamic_item_id: true, fields: [] },
+      { key: "blacklist_remove", title: "移出黑名单", method: "POST", url: "/api/admin/data_center/manual/grading/EDIT-ITEM-ID/blacklist/remove",
+        dynamic_item_id: true, fields: [] }
+    ],
+    outreach: [
+      { key: "send", title: "手动发起触达", method: "POST", url: "/api/admin/data_center/manual/outreach/EDIT-ITEM-ID/send",
+        dynamic_item_id: true, fields: [
+          { name: "channel", label: "渠道", type: "select", options: ["email", "wechat", "sms", "feishu"], value: "email" },
+          { name: "content", label: "触达内容", type: "textarea", placeholder: "您好..." }
+        ] },
+      { key: "resend", title: "失败重发/换渠道", method: "POST", url: "/api/admin/data_center/manual/outreach/EDIT-ITEM-ID/resend",
+        dynamic_item_id: true, fields: [
+          { name: "new_channel", label: "新渠道", type: "select", options: ["email", "wechat", "sms", "feishu"], value: "email" }
+        ] },
+      { key: "cancel", title: "取消待发送", method: "DELETE", url: "/api/admin/data_center/manual/outreach/EDIT-ITEM-ID/cancel",
+        dynamic_item_id: true, fields: [] }
+    ],
+    sales: [
+      { key: "assign", title: "分配销售", method: "POST", url: "/api/admin/data_center/manual/sales/EDIT-ITEM-ID/assign",
+        dynamic_item_id: true, fields: [
+          { name: "assignee", label: "销售人员", placeholder: "zhang.san", required: true }
+        ] },
+      { key: "followup", title: "录入跟进记录", method: "POST", url: "/api/admin/data_center/manual/sales/EDIT-ITEM-ID/followup",
+        dynamic_item_id: true, fields: [
+          { name: "note", label: "跟进内容", type: "textarea", placeholder: "客户已回复，对套餐A兴趣较高...", required: true },
+          { name: "next_followup", label: "下次跟进时间", placeholder: "2026-07-10 10:00" }
+        ] },
+      { key: "add_tags", title: "添加客户标签", method: "PATCH", url: "/api/admin/data_center/manual/sales/EDIT-ITEM-ID/tags",
+        dynamic_item_id: true, fields: [
+          { name: "tags", label: "标签(逗号分隔)", placeholder: "高意向,金融,已试用" }
+        ] },
+      { key: "status", title: "[高危]标记商机状态", risk: "high", method: "PATCH", url: "/api/admin/data_center/manual/sales/EDIT-ITEM-ID/status",
+        dynamic_item_id: true, fields: [
+          { name: "status", label: "状态", type: "select", options: ["communicating", "high_intent", "won", "lost", "closed_invalid"], value: "communicating" }
+        ] }
+    ]
+  };
+
+  // 渲染阶段工具栏按钮（根据 data-stage-actions 属性）
+  function renderStageActionBar() {
+    var nodes = document.querySelectorAll('[data-stage-actions]');
+    if (!nodes.length) return;
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var stage = node.getAttribute('data-stage-actions');
+      if (!STAGE_OPS[stage]) continue;
+      var html = '';
+      var list = STAGE_OPS[stage];
+      for (var j = 0; j < list.length; j++) {
+        var op = list[j];
+        var cls = op.risk === 'high' ? 'btn btn-sm btn-danger' : 'btn btn-sm';
+        html += '<button class="' + cls + '" data-op-key="' + op.key + '" data-stage="' + stage + '" data-dynamic="' + (op.dynamic_item_id ? '1' : '0') + '" onclick="admin.openManualDialog(\'' + stage + '\',\'' + op.key + '\',null)">' + op.title + '</button>';
+      }
+      node.innerHTML = html;
+    }
+  }
+
+  admin.openManualDialog = function (stage, opKey, itemId) {
+    var list = STAGE_OPS[stage];
+    if (!list) return;
+    var op = null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].key === opKey) { op = list[i]; break; }
+    }
+    if (!op) return;
+
+    var titleEl = document.getElementById('manual-dialog-title');
+    titleEl.textContent = op.title + (op.risk === 'high' ? ' [高危操作]' : '');
+    titleEl.className = op.risk === 'high' ? 'title-high-risk' : '';
+
+    // 构建表单
+    var bodyHtml = '';
+    bodyHtml += '<div class="manual-dialog-stage">所属阶段：' + stage + '</div>';
+    bodyHtml += '<div class="manual-dialog-desc">操作将被完整记录到审计日志中，请确认后执行。</div>';
+    bodyHtml += '<div class="manual-dialog-form">';
+
+    if (op.dynamic_item_id) {
+      bodyHtml += '<label>目标ID<span class="required">*</span>' +
+        '<input type="text" name="item_id" placeholder="lead-xxxxx / raw-xxxxx" value="' + (itemId || '') + '" required></label>';
+    }
+
+    if (op.fields && op.fields.length) {
+      for (var f = 0; f < op.fields.length; f++) {
+        var field = op.fields[f];
+        var type = field.type || 'text';
+        var label = field.label || field.name;
+        bodyHtml += '<label>' + label + (field.required ? '<span class="required">*</span>' : '');
+        if (type === 'select') {
+          bodyHtml += '<select name="' + field.name + '">';
+          var opts = field.options || [];
+          for (var o = 0; o < opts.length; o++) {
+            var selected = field.value === opts[o] ? 'selected' : '';
+            bodyHtml += '<option value="' + opts[o] + '" ' + selected + '>' + opts[o] + '</option>';
+          }
+          bodyHtml += '</select>';
+        } else if (type === 'textarea') {
+          bodyHtml += '<textarea name="' + field.name + '" placeholder="' + (field.placeholder || '') + '" rows="4"></textarea>';
+        } else {
+          bodyHtml += '<input type="' + type + '" name="' + field.name + '" placeholder="' + (field.placeholder || '') + '" value="' + (field.value || '') + '">';
+        }
+        bodyHtml += '</label>';
+      }
+    }
+
+    bodyHtml += '<label>操作原因<span class="required">*</span>' +
+      '<textarea name="reason" rows="2" placeholder="请简要说明操作原因，必填" required></textarea></label>';
+    bodyHtml += '</div>';
+
+    if (op.risk === 'high') {
+      bodyHtml += '<div class="manual-dialog-high-risk-notice">⚠ 高危操作：将永久改变数据状态，仅高级权限可执行，请谨慎操作。</div>';
+    }
+
+    var bodyEl = document.getElementById('manual-dialog-body');
+    bodyEl.innerHTML = bodyHtml;
+
+    // 存储当前操作上下文
+    admin._currentOp = { stage: stage, opKey: opKey, op: op };
+
+    document.getElementById('manual-dialog-submit').className = op.risk === 'high' ? 'btn btn-primary btn-danger-countdown' : 'btn btn-primary';
+    document.getElementById('manual-dialog-mask').style.display = 'flex';
+  };
+
+  admin.closeManualDialog = function () {
+    document.getElementById('manual-dialog-mask').style.display = 'none';
+    admin._currentOp = null;
+  };
+
+  admin.submitManualDialog = function () {
+    var ctx = admin._currentOp;
+    if (!ctx) return;
+    var op = ctx.op;
+
+    // 收集表单字段
+    var inputs = document.querySelectorAll('#manual-dialog-body input, #manual-dialog-body select, #manual-dialog-body textarea');
+    var params = {};
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i];
+      var name = el.name;
+      if (!name) continue;
+      if (el.hasAttribute('required') && !el.value.trim()) {
+        admin.showToast('请填写：' + el.name, 'error');
+        el.focus();
+        return;
+      }
+      params[name] = el.value;
+    }
+
+    // 动态替换 item_id
+    var url = op.url;
+    if (op.dynamic_item_id && params.item_id) {
+      url = url.replace('EDIT-ITEM-ID', params.item_id);
+      delete params.item_id;
+    }
+
+    // 二次确认
+    var msg = '确认执行「' + op.title + '」？' + (op.risk === 'high' ? '（高危操作）' : '');
+    if (!confirm(msg)) return;
+
+    // 构造 query string
+    var qs = [];
+    for (var k in params) {
+      if (params.hasOwnProperty(k)) {
+        qs.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+      }
+    }
+
+    // 实际请求：根据 method 选 GET / POST
+    var fetchUrl = url;
+    var fetchOpts = {
+      method: op.method || 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    };
+    if (op.method === 'GET') {
+      fetchUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + qs.join('&');
+    } else if (op.method === 'DELETE') {
+      // DELETE 可以带少量参数
+      fetchUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + qs.join('&');
+    } else {
+      fetchOpts.body = qs.join('&');
+    }
+
+    var submitBtn = document.getElementById('manual-dialog-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '执行中...';
+
+    fetch(fetchUrl, fetchOpts).then(function (resp) {
+      return resp.json().catch(function () { return { code: -1, msg: resp.statusText }; });
+    }).then(function (data) {
+      if (data && data.code === 0) {
+        admin.showToast('操作成功：' + (data.data && data.data.audit_id ? '日志ID=' + data.data.audit_id : '完成'), 'success');
+        admin.closeManualDialog();
+        // 刷新当前页
+        if (typeof admin.loadStageList === 'function' && ctx.stage) {
+          var bodyId = 'dc-' + ctx.stage;
+          admin.loadStageList(ctx.stage, bodyId, 1);
+        }
+      } else {
+        var err = (data && data.msg) || '操作失败';
+        admin.showToast('失败：' + err, 'error');
+      }
+    }).catch(function (e) {
+      admin.showToast('网络异常：' + e, 'error');
+    }).finally(function () {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '确认执行';
+    });
+  };
+
+  admin.showToast = function (msg, type) {
+    var el = document.getElementById('manual-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'manual-toast manual-toast-' + (type || 'info');
+    el.style.display = 'block';
+    setTimeout(function () { el.style.display = 'none'; }, 2800);
+  };
+
+  // T22: 扩展表格行 — 为每行注入"操作"按钮（仅在 data_center 页面生效）
+  function injectRowActionButtons() {
+    var stageFromUrl = function () {
+      var u = (location.pathname || '').toLowerCase();
+      if (u.indexOf('collection') >= 0) return 'collection';
+      if (u.indexOf('cleaning') >= 0) return 'cleaning';
+      if (u.indexOf('compliance') >= 0) return 'compliance';
+      if (u.indexOf('grading') >= 0) return 'grading';
+      if (u.indexOf('outreach') >= 0) return 'outreach';
+      if (u.indexOf('sales') >= 0) return 'sales';
+      return null;
+    }();
+    if (!stageFromUrl || !STAGE_OPS[stageFromUrl]) return;
+
+    // 为每行的 Actions 列注入操作
+    function renderRowActions() {
+      var rows = document.querySelectorAll('.data-table tbody tr');
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        if (row.getAttribute('data-t22-injected')) continue;
+        if (row.querySelector('.empty')) continue;
+        // 取第一个单元格作为 item_id
+        var firstCell = row.querySelector('td:first-child');
+        var itemId = firstCell ? firstCell.textContent.trim() : ('item-' + r);
+
+        // 生成该行操作按钮
+        var ops = STAGE_OPS[stageFromUrl];
+        // 仅选择带 dynamic_item_id 的操作作为行内操作
+        var rowButtons = [];
+        for (var k = 0; k < ops.length; k++) {
+          if (ops[k].dynamic_item_id) rowButtons.push(ops[k]);
+        }
+        // 只展示前 2-3 个作为行内快捷操作
+        var showCount = Math.min(rowButtons.length, 3);
+        var html = '';
+        for (var b = 0; b < showCount; b++) {
+          var bop = rowButtons[b];
+          var bcls = bop.risk === 'high' ? 'btn btn-sm btn-danger' : 'btn btn-sm';
+          html += '<button class="' + bcls + '" onclick="admin.openManualDialog(\'' + stageFromUrl + '\',\'' + bop.key + '\',\'' + itemId + '\')">操作</button>';
+        }
+
+        // 注入到 Actions 列（最后一列）
+        var cells = row.querySelectorAll('td');
+        if (cells.length) {
+          cells[cells.length - 1].innerHTML = html;
+        }
+        row.setAttribute('data-t22-injected', '1');
+      }
+    }
+    // 初始渲染 + 定时补偿（列表加载完成后）
+    renderRowActions();
+    setTimeout(renderRowActions, 500);
+    setTimeout(renderRowActions, 1500);
+  }
+
+  /* ---------------------------------------------------------------------- *
    * 9) Stubs for earlier features (spider/leads/channels/sales/audit/etc.)
    *    These keep the pages.html references working without 404 in console.
    * ---------------------------------------------------------------------- */
@@ -359,6 +695,8 @@
    * ---------------------------------------------------------------------- */
   document.addEventListener("DOMContentLoaded", function () {
     applyPermissionVisibility();
+    try { renderStageActionBar(); } catch (e) { /* ignore */ }
+    try { injectRowActionButtons(); } catch (e) { /* ignore */ }
   });
 
   // Also run immediately (in case DOMContentLoaded already fired when script was late)
