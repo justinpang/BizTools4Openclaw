@@ -752,11 +752,144 @@
    * 9) Stubs for earlier features (spider/leads/channels/sales/audit/etc.)
    *    These keep the pages.html references working without 404 in console.
    * ---------------------------------------------------------------------- */
-  admin.createSpiderTask = function () {
-    // Intentionally left as a stub in this minimal frontend.
-    // Actual submission should POST to /api/admin/spider/task and refresh the list.
-    alert("Spider task creation requires backend integration. (stub)");
+  admin.createSpiderTask = function (event) {
+    if (event) event.preventDefault();
+    if (admin._submitting) {
+      admin.showToast("操作进行中，请稍候...", "error");
+      return false;
+    }
+    var form = document.getElementById("task-create-form");
+    if (!form) {
+      admin.showToast("未找到任务表单", "error");
+      return false;
+    }
+    // 收集所有字段（包括 form="task-create-form" 的外部合规字段）
+    var fd = new FormData(form);
+    // 复选框特殊处理：未勾选的字段后端期望 "false"
+    ["compliance_agreed", "compliance_privacy", "compliance_site_verified"].forEach(function (k) {
+      var els = document.querySelectorAll('[name="' + k + '"][form="task-create-form"]');
+      els.forEach(function (el) {
+        if (el.type === "checkbox") {
+          if (el.checked) fd.set(k, "true");
+          else if (!fd.has(k)) fd.set(k, "false");
+        }
+      });
+    });
+    // 提交
+    admin._submitting = true;
+    var params = new URLSearchParams(fd);
+    fetch("/api/admin/spider/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      credentials: "same-origin",
+      body: params.toString(),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        admin._submitting = false;
+        if (data && typeof data.code !== "undefined" && data.code === 0) {
+          var msg = "任务保存成功";
+          if (data.needs_approval) msg += "（待合规审核通过后可启动）";
+          admin.showSuccess(msg);
+          // 刷新任务列表
+          if (typeof admin.loadRecentTasks === "function") admin.loadRecentTasks();
+          if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+          // 重置表单
+          form.reset();
+        } else {
+          admin.showError((data && data.msg) ? data.msg : "任务保存失败");
+        }
+      })
+      .catch(function (err) {
+        admin._submitting = false;
+        admin.showError("网络异常：" + (err && err.message ? err.message : err));
+      });
     return false;
+  };
+
+  admin.loadSpiderTasks = function () {
+    var tbody = document.getElementById("tasks-body");
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">加载中...</td></tr>';
+    fetch("/api/admin/spider/tasks")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var items = (data && data.items) || (data && data.data && data.data.items) || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无采集任务</td></tr>';
+          return;
+        }
+        var __zhTaskStatus = {
+          "DRAFT": "草稿", "READY": "就绪", "RUNNING": "运行中",
+          "PAUSED": "已暂停", "COMPLETED": "已完成", "FAILED": "失败",
+          "TERMINATED": "已终止", "PENDING_APPROVAL": "待审核", "REJECTED": "已驳回"
+        };
+        var __zhChannel = {
+          "generic_web": "通用网页", "short_video": "短视频", "xhs": "小红书",
+          "qa_platform": "问答平台", "b2b_supply": "供需B2B", "bidding": "招投标",
+          "company_biz": "企业工商"
+        };
+        var statusColor = function (s) {
+          if (s === "RUNNING" || s === "READY") return "#28a745";
+          if (s === "PENDING_APPROVAL") return "#f5a623";
+          if (s === "FAILED" || s === "REJECTED" || s === "TERMINATED") return "#dc3545";
+          if (s === "PAUSED") return "#6c757d";
+          if (s === "COMPLETED") return "#007bff";
+          return "#2c3e50";
+        };
+        var rows = items.map(function (item) {
+          var jid = item.job_id || "";
+          var channel = __zhChannel[item.channel] || item.channel || "";
+          var name = item.task_name || "";
+          var status = __zhTaskStatus[item.status] || item.status || "未知";
+          var sColor = statusColor(item.status);
+          var success = typeof item.success === "number" ? item.success : 0;
+          var failed = typeof item.failed === "number" ? item.failed : 0;
+          var next = item.next_run || "-";
+          return '<tr data-job-id="' + jid + '">' +
+            '<td><code>' + jid + '</code></td>' +
+            '<td>' + channel + '</td>' +
+            '<td>' + name + '</td>' +
+            '<td style="color:' + sColor + ';font-weight:500;">' + status + '</td>' +
+            '<td>' + success + '</td>' +
+            '<td>' + failed + '</td>' +
+            '<td>' + next + '</td>' +
+            '<td class="row-actions">' +
+              '<button class="btn btn-sm" onclick="admin.runSpiderTask(\'' + jid + '\')">立即运行</button> ' +
+              '<button class="btn btn-sm" onclick="admin.deleteSpiderTask(\'' + jid + '\')">删除</button>' +
+            '</td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = rows.join("");
+      })
+      .catch(function (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败：' + e.message + '</td></tr>';
+        console.error("spider tasks error", e);
+      });
+  };
+
+  admin.runSpiderTask = function (jobId) {
+    if (!confirm("确认立即启动任务：" + jobId + "？")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/run", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("任务已启动");
+        else admin.showError((data && data.msg) || "启动失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.deleteSpiderTask = function (jobId) {
+    if (!confirm("确认删除任务：" + jobId + "？（仅删除调度，不影响已采集数据）")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId), { method: "DELETE", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("任务已删除");
+        else admin.showError((data && data.msg) || "删除失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
   };
 
   admin.loadNotificationsList = function () { /* stub */ };
@@ -1245,6 +1378,13 @@
     applyPermissionVisibility();
     try { renderStageActionBar(); } catch (e) { /* ignore */ }
     try { injectRowActionButtons(); } catch (e) { /* ignore */ }
+    var ak = (admin.init && admin.init.activeKey) || "";
+    if (ak === "spider" && typeof admin.loadSpiderTasks === "function") {
+      admin.loadSpiderTasks();
+    }
+    if (ak === "data_center" && typeof admin.loadExceptionPool === "function") {
+      admin.loadExceptionPool();
+    }
   });
 
   // Also run immediately (in case DOMContentLoaded already fired when script was late)
