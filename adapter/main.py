@@ -33,6 +33,25 @@ app.middleware("http")(build_trace_middleware())
 app.include_router(task_router)
 app.include_router(tools_router)
 
+# 注册业务模块 v1 路由（按需加载，模块不可用时静默跳过）
+try:
+    from adapter.v1.data_clean import router as data_clean_router
+    app.include_router(data_clean_router)
+except Exception as exc:
+    logger.warning(f"v1/data_clean 路由挂载失败: {exc}")
+
+try:
+    from adapter.v1.customer_send import router as customer_send_router
+    app.include_router(customer_send_router)
+except Exception as exc:
+    logger.warning(f"v1/customer_send 路由挂载失败: {exc}")
+
+try:
+    from adapter.v1.sales_task import router as sales_task_router
+    app.include_router(sales_task_router)
+except Exception as exc:
+    logger.warning(f"v1/sales_task 路由挂载失败: {exc}")
+
 
 @app.get("/health", tags=["system"])
 async def health():
@@ -87,6 +106,50 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error(500, f"服务异常: {exc}", trace_id=tid).model_dump(),
     )
+
+
+# ============== 启动时初始化：数据库 / Redis ==============
+# 在 FastAPI lifespan 中调用，确保启动时数据库/缓存可用。
+#  - SQLite 模式：自动建表
+#  - PostgreSQL 模式：自动建表（若 init_db.sql 未预先执行）
+#  - Redis 不可达：自动降级到内存 stub（测试部署）
+
+import asyncio as _asyncio  # noqa: E402
+
+try:
+    from contextlib import asynccontextmanager as _asynccontextmanager  # type: ignore
+
+    @_asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        # startup: 初始化数据库与 Redis
+        try:
+            from infra.db_base import database as _db
+            _db.ensure_connected()
+            logger.info(f"startup: DB backend ready (engine={_db.engine})")
+        except Exception as exc:
+            logger.warning(f"startup: DB init warning: {exc}")
+        try:
+            from infra.redis_client import get_redis as _get_redis
+            _r = _get_redis()
+            # 简单的 ping/可用性检测
+            try:
+                _r.ping()
+            except Exception:
+                pass
+            logger.info("startup: Redis/stub ready")
+        except Exception as exc:
+            logger.warning(f"startup: Redis init warning: {exc}")
+        yield
+        # shutdown: 无额外清理（连接池已由单例管理）
+
+    # 替换 app.lifespan（仅当使用支持 lifespan 的 FastAPI 版本时生效）
+    try:
+        app.router.lifespan_context = _lifespan  # type: ignore[attr-defined]
+    except Exception:
+        # 兼容老版本：在第一个请求到达时再初始化
+        pass
+except Exception as exc:  # pragma: no cover
+    logger.warning(f"lifespan 注册失败: {exc}")
 
 
 def run_server() -> None:

@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docker Attach (debug)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "/app"
+        }
+      ],
+      "justMyCode": false,
+      "redirectOutput": true,
+      "description": "Attach to biz-tools-app-debug container (PostgreSQL + Redis)"
+    },
+    {
+      "name": "Docker Attach (debug-lite)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "/app"
+        }
+      ],
+      "justMyCode": false,
+      "redirectOutput": true,
+      "description": "Attach to biz-tools-app-debug-lite container (SQLite + memory Redis)"
+    },
+    {
+      "name": "Local: adapter.main:app (uvicorn --reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "adapter.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DB_BACKEND": "sqlite",
+        "QUEUE_REDIS_HOST": "127.0.0.1",
+        "LOG_LEVEL": "DEBUG",
+        "ENV": "dev",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "justMyCode": false,
+      "description": "Fastest local debugging without Docker (sqlite + memory Redis)"
+    }
+  ]
+}

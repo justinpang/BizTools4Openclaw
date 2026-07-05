@@ -1,32 +1,68 @@
 # ====================================================================
 #  BizTools4Openclaw — docker-compose.yml
-#  三服务编排：PostgreSQL (db) + Redis (cache/queue) + App (FastAPI + Web Admin)
+#  四种启动模式（通过 --profile 选择）：
 #
-#  使用方式：
-#     生产模式： docker compose --profile prod up -d --build
-#     开发模式： docker compose --profile dev  up -d --build
-#     查看日志： docker compose logs -f app
-#     停止所有： docker compose --profile prod down
+#  ┌─────────────┬──────────────────────────────────────────────────────────┐
+#  │ 模式        │ 说明                                                    │
+#  ├─────────────┼──────────────────────────────────────────────────────────┤
+#  │ lite        │ **仅一个 app 容器**。SQLite + 内存 Redis stub。最轻便   │
+#  │ dev         │ app + db(postgres+pgvector) + redis。用镜像内代码，无    │
+#  │             │ 热重载，稳定运行                                          │
+#  │ debug       │ app + db + redis。**挂载本地源码 + debugpy + --reload**   │
+#  │             │ VS Code/PyCharm 可在 5678 端口附加断点。改代码自动重启   │
+#  │ debug-lite  │ **仅一个 app 容器**。SQLite + 内存 Redis stub，但挂载    │
+#  │             │ 本地源码 + debugpy。最轻量调试方案                        │
+#  │ prod        │ 与 dev 类似，三个容器。不可变部署（使用镜像内代码）       │
+#  └─────────────┴──────────────────────────────────────────────────────────┘
 #
-#  前置条件：
-#     1. 在项目根目录创建 .env（可从 .env.example 复制）
-#     2. 必须配置：DB_PASSWORD, DB_ENCRYPTION_KEY(≥32), WEB_ADMIN_PASSWORD_PLAIN
+#  快速命令（在项目根目录执行）：
+#      docker compose -f docker/docker-compose.yml --profile debug-lite up -d --build
+#      docker compose -f docker/docker-compose.yml --profile debug up -d --build
+#      docker compose -f docker/docker-compose.yml --profile lite up -d --build
+#      docker compose -f docker/docker-compose.yml --profile dev up -d --build
+#      docker compose -f docker/docker-compose.yml --profile prod up -d --build
+#      docker compose -f docker/docker-compose.yml logs -f app-debug  # 调试模式日志
+#      docker compose -f docker/docker-compose.yml down
+#
+#  调试端口：
+#      8000 → 应用（浏览器 / curl）
+#      5678 → debugpy 调试协议（VS Code / PyCharm 附加）
+#      5432 → PostgreSQL（dev/debug 模式）
+#      6379 → Redis（dev/debug 模式）
+#
+#  环境变量文件：
+#      - 复制 .env.docker 到项目根目录作为 .env:  cp ../.env.docker ../.env
+#      - compose 会从项目根目录读取 ../.env（通过各个服务的 env_file）
+#      - 也可显式指定： docker compose --env-file ../.env ...
+#
+#  注意：请在项目根目录下运行 docker compose，或显式指定 --env-file
+#      推荐在项目根目录运行：
+#          cd ..
+#          docker compose -f docker/docker-compose.yml --profile dev up -d --build
+#      或在 docker/ 目录下显式指定 env-file：
+#          docker compose --env-file ../.env --profile dev up -d --build
+#
+#  关键强依赖：
+#      DB_ENCRYPTION_KEY         # 敏感字段加密密钥（建议 ≥32 字符）
+#      WEB_ADMIN_PASSWORD_PLAIN  # 后台登录明文密码
 # ====================================================================
 
 services:
 
   # ================= PostgreSQL + pgvector =================
+  # dev / prod 模式使用；lite 模式不需要
   db:
-    image: pgvector/pgvector:pg16
+    image: docker.m.daocloud.io/pgvector/pgvector:pg16
     container_name: biz-tools-db
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 中配置 DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres-local-password-change-me}
       POSTGRES_DB: ${DB_NAME:-openclaw_biz}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 初始化脚本：首次启动时按文件名顺序执行
+      - ./init_db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-openclaw_biz}"]
       interval: 10s
@@ -36,18 +72,18 @@ services:
     restart: unless-stopped
     networks:
       - biz-tools-net
-    # dev profile 暴露端口到宿主，prod 仅容器间访问
+    # dev 暴露端口，prod 不暴露（仅供容器内部通信）
     ports:
       - "${DB_PORT:-5432}:5432"
     profiles:
       - dev
       - prod
 
-  # ================= Redis（会话缓存 + 异步任务队列） =================
+  # ================= Redis（会话 + 异步队列） =================
   redis:
-    image: redis:7.2-alpine
+    image: docker.m.daocloud.io/library/redis:7.2-alpine
     container_name: biz-tools-redis
-    # AOF 持久化 + 可选 requirepass
+    # AOF 持久化 + 可选 requirepass + 最大内存 256MB
     command: >
       sh -c "
         redis-server
@@ -75,26 +111,132 @@ services:
       - dev
       - prod
 
+  # ================= FastAPI 应用 — lite 模式（零依赖） =================
+  # 最小测试部署：一个容器，数据库用内置 SQLite，会话用内存 stub
+  app-lite:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: biz-tools-app-lite
+    image: biz-tools-openclaw:latest
+    environment:
+      # 让应用走 SQLite（数据库） + 内存 stub（Redis 回退）
+      DB_BACKEND: "sqlite"
+      DB_SQLITE_PATH: "/app/data/openclaw_biz.db"
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:-change-me-32-chars-encryption-key!!}
+      DB_ARCHIVE_DAYS: "90"
+      DB_ARCHIVE_HOT_THRESHOLD: "1000"
+
+      # 让 QUEUE_REDIS_HOST 指向一个不存在的地址，应用会自动走内存 stub
+      QUEUE_REDIS_HOST: "127.0.0.1"
+      QUEUE_REDIS_PORT: "6379"
+      QUEUE_POOL_TIMEOUT: "1.0"
+
+      # web 后台
+      WEB_ADMIN_ENABLED: "true"
+      WEB_ADMIN_USERNAME: ${WEB_ADMIN_USERNAME:-admin}
+      WEB_ADMIN_PASSWORD_PLAIN: ${WEB_ADMIN_PASSWORD_PLAIN:-admin123}
+      WEB_ADMIN_SESSION_TTL_SECONDS: "28800"
+
+      # 应用基础配置
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENV: ${ENV:-prod}
+      PROJECT_NAME: "openclaw-business-tools"
+
+      # OpenClaw 网关（可选，留空则不启用外部调用）
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+
+      # 渠道（可选，留空则不启用）
+      ALERT_ENABLED: "false"
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+      DINGTALK_SECRET: ${DINGTALK_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TO: ${SMTP_TO:-}
+
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      WECHAT_TEMPLATE_ID: ${WECHAT_TEMPLATE_ID:-}
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+
+      # 适配器 API token（逗号分隔，用于外部智能体调用）
+      ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
+
+      # OpenClaw 回调（可选）
+      OPENCLAW_CALLBACK_URL: ${OPENCLAW_CALLBACK_URL:-}
+
+      # 代理（可选）
+      PROXY_ENABLED: ${PROXY_ENABLED:-false}
+      PROXY_HTTP: ${PROXY_HTTP:-}
+      PROXY_HTTPS: ${PROXY_HTTPS:-}
+      CRAWLER_UA: ${CRAWLER_UA:-Mozilla/5.0 (compatible; BizTools4Openclaw/1.0)}
+      CRAWLER_RATE_LIMIT: ${CRAWLER_RATE_LIMIT:-10}
+
+    volumes:
+      - lite_app_data:/app/data
+      - lite_app_logs:/app/logs
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - biz-tools-net
+    profiles:
+      - lite
+
   # ================= FastAPI 应用 — dev 模式 =================
-  # 特点：挂载本地代码 volume，支持 --reload 热重载；LOG_LEVEL=DEBUG
+  # 连接 Postgres+Redis，使用镜像内构建好的代码（不挂载本地源码，避免 Windows 文件系统兼容问题）
   app-dev:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: biz-tools-app-dev
+    image: biz-tools-openclaw:latest
     env_file:
       - ../.env
     environment:
-      DB_HOST: db
+      DB_BACKEND: "postgres"
+      DB_HOST: "db"
       DB_PORT: "5432"
-      REDIS_HOST: redis
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres-local-password-change-me}
+      DB_NAME: ${DB_NAME:-openclaw_biz}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+
+      REDIS_HOST: "redis"
       REDIS_PORT: "6379"
+      QUEUE_REDIS_HOST: "redis"
+      QUEUE_REDIS_PORT: "6379"
+      QUEUE_POOL_TIMEOUT: "5.0"
+
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
-      LOG_LEVEL: DEBUG
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       DEBUG: "true"
+      ENV: ${ENV:-dev}
+
+      WEB_ADMIN_ENABLED: "true"
+      WEB_ADMIN_USERNAME: ${WEB_ADMIN_USERNAME:-admin}
+      WEB_ADMIN_PASSWORD_PLAIN: ${WEB_ADMIN_PASSWORD_PLAIN:-admin123}
+
+      ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
     volumes:
-      - ../:/app
+      # 只挂载日志，不挂载源码（避免 Windows→Linux 文件系统兼容问题）
+      - dev_app_logs:/app/logs
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
@@ -104,34 +246,208 @@ services:
         condition: service_healthy
     networks:
       - biz-tools-net
+    # 不使用 --reload（Windows 卷挂载下 inotify 不可用，会导致服务挂住）
     command: >
       uvicorn adapter.main:app
         --host 0.0.0.0
         --port 8000
-        --reload
-        --workers 1
-    restart: "no"
+        --workers 2
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
     profiles:
       - dev
 
+  # ================= FastAPI 应用 — debug 模式（带调试器 + 热重载） =================
+  # 核心特性：
+  #   1. 挂载本地源码 → 修改代码立即生效（WSL2/Windows 文件互操作）
+  #   2. debugpy 监听 5678 → VS Code/PyCharm 可附加断点调试
+  #   3. uvicorn --reload → 代码变更自动重启
+  #   4. 源码映射到容器内 /app → 断点位置与本地源码完全对应
+  #
+  # 使用方式：
+  #   docker compose -f docker/docker-compose.yml --profile debug up -d --build
+  #   然后在 VS Code 中按 F5 或点击 "▶ Attach to Docker"
+  app-debug:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: biz-tools-app-debug
+    image: biz-tools-openclaw:latest
+    env_file:
+      - ../.env
+    environment:
+      DB_BACKEND: "postgres"
+      DB_HOST: "db"
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres-local-password-change-me}
+      DB_NAME: ${DB_NAME:-openclaw_biz}
+      DB_POOL_SIZE: "5"
+      DB_MAX_OVERFLOW: "10"
+
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      QUEUE_REDIS_HOST: "redis"
+      QUEUE_REDIS_PORT: "6379"
+      QUEUE_POOL_TIMEOUT: "5.0"
+
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: "DEBUG"
+      DEBUG: "true"
+      ENV: "dev"
+
+      WEB_ADMIN_ENABLED: "true"
+      WEB_ADMIN_USERNAME: ${WEB_ADMIN_USERNAME:-admin}
+      WEB_ADMIN_PASSWORD_PLAIN: ${WEB_ADMIN_PASSWORD_PLAIN:-admin123}
+
+      ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
+
+      # Python 调试与源码映射设置
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app"
+    volumes:
+      # 关键：挂载项目源码到容器内 /app，让断点与本地代码对应
+      - ../:/app
+      # 挂载日志目录（可选持久化）
+      - debug_app_logs:/app/logs
+    ports:
+      - "8000:8000"    # 应用端口
+      - "5678:5678"    # debugpy 调试端口（VS Code/PyCharm 用）
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - biz-tools-net
+    # 启动命令：
+    #   python -m debugpy --listen 0.0.0.0:5678
+    #     → 在 5678 端口启动调试适配器
+    #   然后启动 uvicorn --reload
+    #     → 修改 .py 文件后自动重启应用
+    #   --reload-include *.py *.yaml *.yml *.json
+    #     → 监听 Python/YAML/JSON 文件变化
+    command: >
+      python -m debugpy --listen 0.0.0.0:5678
+        -m uvicorn adapter.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app
+        --reload-include "*.py"
+        --reload-include "*.yaml"
+        --reload-include "*.yml"
+        --reload-include "*.json"
+        --log-level debug
+    # 调试模式下不需要 healthcheck（频繁重启会干扰）
+    restart: unless-stopped
+    profiles:
+      - debug
+
+  # ================= FastAPI 应用 — debug-lite 模式 =================
+  # 最轻量调试：SQLite + 内存 Redis stub，仅一个容器
+  # 适合快速验证代码、调试单个功能，无需启动 PostgreSQL/Redis
+  app-debug-lite:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: biz-tools-app-debug-lite
+    image: biz-tools-openclaw:latest
+    environment:
+      # 轻量模式：SQLite + 内存 stub
+      DB_BACKEND: "sqlite"
+      DB_SQLITE_PATH: "/app/data/openclaw_biz.db"
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:-change-me-32-chars-encryption-key!!}
+
+      QUEUE_REDIS_HOST: "127.0.0.1"
+      QUEUE_REDIS_PORT: "6379"
+
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
+      LOG_LEVEL: "DEBUG"
+      DEBUG: "true"
+      ENV: "dev"
+
+      WEB_ADMIN_ENABLED: "true"
+      WEB_ADMIN_USERNAME: ${WEB_ADMIN_USERNAME:-admin}
+      WEB_ADMIN_PASSWORD_PLAIN: ${WEB_ADMIN_PASSWORD_PLAIN:-admin123}
+
+      ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
+
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app"
+    volumes:
+      # 挂载本地源码
+      - ../:/app
+      - debug_lite_data:/app/data
+      - debug_lite_logs:/app/logs
+    ports:
+      - "8000:8000"
+      - "5678:5678"
+    networks:
+      - biz-tools-net
+    command: >
+      python -m debugpy --listen 0.0.0.0:5678
+        -m uvicorn adapter.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app
+        --reload-include "*.py"
+        --reload-include "*.yaml"
+        --reload-include "*.yml"
+        --reload-include "*.json"
+        --log-level debug
+    restart: unless-stopped
+    profiles:
+      - debug-lite
+
   # ================= FastAPI 应用 — prod 模式 =================
-  # 特点：不可变部署（使用镜像内代码），4 worker，LOG_LEVEL=INFO
+  # 不可变部署（使用镜像内代码），4 worker，不暴露 db/redis 端口
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: biz-tools-app
+    image: biz-tools-openclaw:latest
     env_file:
       - ../.env
     environment:
-      DB_HOST: db
+      DB_BACKEND: "postgres"
+      DB_HOST: "db"
       DB_PORT: "5432"
-      REDIS_HOST: redis
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres-local-password-change-me}
+      DB_NAME: ${DB_NAME:-openclaw_biz}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+
+      REDIS_HOST: "redis"
       REDIS_PORT: "6379"
+      QUEUE_REDIS_HOST: "redis"
+      QUEUE_REDIS_PORT: "6379"
+      QUEUE_POOL_TIMEOUT: "5.0"
+
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
-      LOG_LEVEL: INFO
-      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENV: ${ENV:-prod}
+
+      WEB_ADMIN_ENABLED: "true"
+      WEB_ADMIN_USERNAME: ${WEB_ADMIN_USERNAME:-admin}
+      WEB_ADMIN_PASSWORD_PLAIN: ${WEB_ADMIN_PASSWORD_PLAIN:-admin123}
+
+      ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
+    volumes:
+      - prod_app_logs:/app/logs
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
@@ -146,6 +462,12 @@ services:
         --host 0.0.0.0
         --port 8000
         --workers 4
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
     profiles:
       - prod
@@ -155,6 +477,21 @@ volumes:
   pg_data:
     driver: local
   redis_data:
+    driver: local
+  lite_app_data:
+    driver: local
+  lite_app_logs:
+    driver: local
+  dev_app_logs:
+    driver: local
+  prod_app_logs:
+    driver: local
+  # ---- 调试模式用 ----
+  debug_app_logs:
+    driver: local
+  debug_lite_data:
+    driver: local
+  debug_lite_logs:
     driver: local
 
 # ================= 专用网络 =================

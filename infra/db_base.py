@@ -151,28 +151,98 @@ class Database:
             from sqlalchemy.orm import sessionmaker, scoped_session
             from configs.settings import settings as _settings
 
-            url = (
-                f"postgresql+psycopg2://{_settings.db.DB_USER}:{_settings.db.DB_PASSWORD}"
-                f"@{_settings.db.DB_HOST}:{_settings.db.DB_PORT}/{_settings.db.DB_NAME}"
-            )
+            # —— 显式触发 ORM 模块的 import，让表类注册到 Base.metadata ——
+            # 仅导入 infra.db_models（它继承自本模块的 Base）。
+            # business.*._orm 使用它们自己的 _Base，因此即使导入也不会被这里的
+            # Base.metadata.create_all() 建表；此外它们的 __init__.py 含有重依赖，
+            # 可能导致阻塞或循环导入。它们会在运行时通过各自的 ensure_tables() 建表。
             try:
-                self.engine = create_engine(
-                    url,
-                    pool_size=int(_settings.db.DB_POOL_SIZE or 10),
-                    max_overflow=int(_settings.db.DB_MAX_OVERFLOW or 20),
-                    pool_pre_ping=True,
-                    pool_recycle=1800,
-                    echo=False,
+                import infra.db_models  # noqa: F401
+            except Exception:
+                pass
+
+            engine = None
+            chosen_backend = _settings.db.DB_BACKEND or "postgres"
+
+            # 1) 若显式声明 sqlite 后端 → 直接走 SQLite
+            if _settings.db.is_sqlite:
+                engine = self._make_sqlite_engine(_settings)
+                chosen_backend = "sqlite"
+            else:
+                # 2) 先尝试 PG；如果连不上就降级到 SQLite（方便一键部署 / 测试场景）
+                pg_url = (
+                    f"postgresql+psycopg2://{_settings.db.DB_USER}:{_settings.db.DB_PASSWORD}"
+                    f"@{_settings.db.DB_HOST}:{_settings.db.DB_PORT}/{_settings.db.DB_NAME}"
                 )
-                self._session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
+                try:
+                    engine = create_engine(
+                        pg_url,
+                        pool_size=int(_settings.db.DB_POOL_SIZE or 10),
+                        max_overflow=int(_settings.db.DB_MAX_OVERFLOW or 20),
+                        pool_pre_ping=True,
+                        pool_recycle=1800,
+                        echo=False,
+                        # 给一个较短的首次连接超时，便于快速回退
+                        connect_args={"connect_timeout": 3},
+                    )
+                    # 立即验证一次；如果失败就回退到 SQLite
+                    with engine.connect() as _conn:
+                        _conn.exec_driver_sql("SELECT 1")
+                except Exception as pg_err:
+                    logger.warning(
+                        f"postgresql 不可达（host={_settings.db.DB_HOST} err={pg_err}），"
+                        "回退到 SQLite（仅用于测试部署）"
+                    )
+                    try:
+                        engine.dispose()
+                    except Exception:
+                        pass
+                    engine = self._make_sqlite_engine(_settings)
+                    chosen_backend = "sqlite"
+
+            if engine is None:
+                raise DBUnreachableError("无法初始化任何数据库引擎")
+
+            try:
+                self.engine = engine
+                self._session_factory = sessionmaker(
+                    bind=self.engine,
+                    expire_on_commit=False,
+                )
                 self.Session = scoped_session(self._session_factory)
                 self._initialized = True
-                logger.info("db engine initialized")
+                # 自动建表（SQLite 没有 docker-entrypoint-initdb.d 机制）
+                try:
+                    Base.metadata.create_all(bind=self.engine)  # type: ignore[attr-defined]
+                    logger.info(f"db engine initialized: backend={chosen_backend}")
+                except Exception as schema_err:
+                    logger.warning(f"自动建表失败: {schema_err}（将在后续调用 create_all 时重试）")
             except Exception as exc:
                 tb = traceback.format_exc()
                 logger.error(f"db engine init failed: {exc}")
                 self._alert_once("engine-init", f"数据库初始化失败: {exc}", extra={"traceback": tb[:2000]})
                 raise DBUnreachableError(str(exc), data={"reason": "engine_init"})
+
+    def _make_sqlite_engine(self, _settings):
+        """构造一个 SQLite engine；使用内存数据库或文件数据库（取决于 DB_SQLITE_PATH）。"""
+        from sqlalchemy import create_engine
+
+        path = (_settings.db.DB_SQLITE_PATH or "").strip()
+        if path:
+            db_url = f"sqlite:///{path}"
+        else:
+            db_url = "sqlite://"
+        logger.info(f"using sqlite backend: {db_url}")
+
+        check_same_thread = bool(_settings.db.DB_SQLITE_CHECK_SAME_THREAD)
+
+        engine = create_engine(
+            db_url,
+            echo=False,
+            connect_args={"check_same_thread": check_same_thread},
+            pool_pre_ping=False,
+        )
+        return engine
 
     # -------- 基础会话 --------
 

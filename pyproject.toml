@@ -1,21 +1,50 @@
+[project]
+name = "biztools4openclaw"
+version = "0.1.0"
+description = "BizTools4Openclaw — 智能商机抓取、清洗、分发与跟踪一体化工具"
+requires-python = ">=3.11,<3.13"
+authors = [
+    {name = "BizTools Team"},
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "SQLAlchemy>=2.0.25",
+    "psycopg2-binary>=2.9.9",
+    "pgvector>=0.2.5",
+    "alembic>=1.13.0",
+    "cryptography>=41.0.0",
+    "python-dotenv>=1.0.0",
+    "loguru>=0.7.2",
+    "redis>=5.0.0",
+    "APScheduler>=3.10.4",
+    "playwright>=1.42.0",
+    "beautifulsoup4>=4.12.3",
+    "lxml>=5.1.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+biztools-server = "adapter.main:run_server"
+
 [tool.pytest.ini_options]
-# 统一的 pytest 配置：
-#   - testpaths: 限定搜索测试的目录，避免 pytest 意外扫描其他路径
-#   - filterwarnings:
-#       * error: 让所有 warning 默认都升级为 error（强制开发者在 CI 中修复）
-#       * ignore: 明确列出那些来自第三方库（而非我们代码）的已知弃用警告
 minversion = "8.0"
 testpaths = ["tests"]
 filterwarnings = [
-    # ------- 来自 fastapi / starlette / httpx 的上游弃用警告 -------
-    # starlette.testclient 在 Python 3.13+ 建议使用 httpx2，
-    # 不是本仓库的问题，也不在本仓库修复范围。
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
-    # ------- 来自 pytest-asyncio 的 fixture 默认作用域提醒 -------
-    # pytest-asyncio 1.x 引入的提醒，应在 pytest-asyncio 项目中处理。
     "ignore:.*asyncio_default_fixture_loop_scope.*:pytest.PytestDeprecationWarning",
-    # ------- 数据库驱动的弃用提醒（sqlite3 默认 datetime adapter）----
-    # Python 3.12+ 起的内置弃用；我们在 tests/conftest.py 注册了自定义 adapter，
-    # 但仍有直接使用 sqlite3 的第三方代码会触发。
     "ignore:The default datetime adapter is deprecated as of Python 3.12",
 ]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

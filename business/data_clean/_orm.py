@@ -9,6 +9,9 @@ from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, SmallInteger, S
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from infra.db_base import database
+from infra.logger_setup import get_logger
+
+logger = get_logger("data_clean.orm")
 
 
 class _Base(DeclarativeBase):

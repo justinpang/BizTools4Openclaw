@@ -50,6 +50,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.docker          # 模板文件也不要打包
 .secrets
 *.key
 *.pem

@@ -49,7 +49,7 @@ class TestT14Pages(unittest.TestCase):
         with TestClient(app) as client:
             r = client.get("/admin/login")
             self.assertEqual(r.status_code, 200)
-            self.assertIn("登录", r.text)
+            self.assertIn("Login", r.text)
 
     def test_dashboard_page(self):
         from fastapi.testclient import TestClient

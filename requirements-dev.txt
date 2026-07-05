@@ -1,7 +1,8 @@
 # ====================================================================
-# BizTools4Openclaw — 核心依赖
+# BizTools4Openclaw — 本地开发依赖
 # 目标 Python 版本：3.11.x
-# 说明：所有依赖均已在 Python 3.11 环境下充分测试
+# 说明：与 requirements.txt 相同，额外添加了开发工具
+#       在 Python 3.11 下所有依赖（包括 psycopg2-binary、pgvector）均正常工作
 # ====================================================================
 
 # ========== Web 框架 ==========
@@ -13,9 +14,8 @@ pydantic-settings>=2.1.0,<2.6.0
 python-multipart>=0.0.9,<0.1.0
 
 # ========== 数据库 ==========
-# psycopg2-binary 2.9.9+ 在 Python 3.11 上有完整的 pre-built wheel
+# Python 3.11 完全支持 psycopg2-binary 和 pgvector 的 pre-built wheel
 psycopg2-binary>=2.9.9,<3.0.0
-# pgvector 0.2.5+ 兼容 Python 3.11，依赖 psycopg2
 pgvector>=0.2.5,<0.4.0
 SQLAlchemy>=2.0.25,<2.1.0
 alembic>=1.13.0,<1.14.0
@@ -33,6 +33,7 @@ redis>=5.0.0,<6.0.0
 APScheduler>=3.10.4,<4.0.0
 
 # ========== 爬虫 ==========
+# playwright 包较大（~50MB），如无需爬虫功能可注释以下三行
 playwright>=1.42.0,<2.0.0
 beautifulsoup4>=4.12.3,<5.0.0
 lxml>=5.1.0,<6.0.0

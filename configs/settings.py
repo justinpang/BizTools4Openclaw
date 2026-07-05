@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 关键修复：显式加载 .env 文件到 os.environ
+# 这样嵌套的 BaseSettings 子模型（DBSettings、WebAdminSettings 等）
+# 都能从环境变量中读取到 .env 文件中的配置
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path)
+    del _env_path
 
 
 ENV_MODE = Literal["dev", "test", "prod"]
@@ -103,6 +114,7 @@ class DBSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="", extra="ignore")
 
+    # ---- PostgreSQL 连接参数（DB_BACKEND=postgres 时使用） ----
     DB_HOST: str = "127.0.0.1"
     DB_PORT: int = 5432
     DB_USER: str = "postgres"
@@ -111,11 +123,22 @@ class DBSettings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
 
+    # ---- SQLite 回退参数（DB_BACKEND=sqlite 或 PG 不可用时使用） ----
+    # 路径留空 = :memory: 内存数据库；也可写 "/app/data/openclaw_biz.db"
+    DB_BACKEND: str = "postgres"           # "postgres" | "sqlite"
+    DB_SQLITE_PATH: str = ""               # 留空 = 内存数据库
+    DB_SQLITE_CHECK_SAME_THREAD: bool = False  # 便于协程与多线程共用
+
+    # ---- 通用参数 ----
     DB_ENCRYPTION_KEY: str = ""
     DB_ARCHIVE_DAYS: int = 90
     DB_ARCHIVE_HOT_THRESHOLD: float = 1000.0
     DB_SENSITIVE_MASK_ENABLED: bool = True
     DB_TABLE_PREFIX: str = ""
+
+    @property
+    def is_sqlite(self) -> bool:
+        return (self.DB_BACKEND or "").lower().strip() == "sqlite"
 
     def masked_repr(self) -> dict:
         """打印配置时替换敏感字段为 ***。"""
@@ -397,12 +420,25 @@ class WebAdminSettings(BaseSettings):
     WEB_ADMIN_ENABLED: bool = True
     WEB_ADMIN_PATH_PREFIX: str = "/admin"
 
-    # 管理员账号（密码通过 bcrypt 哈希存储）
+    # 多账号支持（推荐）：JSON 数组，每项形如
+    #   {"username": "admin", "role": "super_admin", "password_hash": "$2a$...", "password_plain": "仅初始化使用"}
+    # 字段说明：
+    #   username        : 登录名（唯一）
+    #   role            : super_admin | ops | sales | compliance（四级角色）
+    #   password_hash   : bcrypt 或 sha256+ salt 哈希（生产环境必须配置）
+    #   password_plain  : 仅当 password_hash 为空时用于初始化哈希（不持久化）
+    # 示例：
+    #   WEB_ADMIN_ACCOUNTS_JSON=[{"username":"admin","role":"super_admin","password_plain":"ChangeMe123"},{"username":"ops_01","role":"ops","password_plain":"ChangeMe123"}]
+    WEB_ADMIN_ACCOUNTS_JSON: str = ""
+
+    # 单账号兼容模式（当 WEB_ADMIN_ACCOUNTS_JSON 为空时生效），role 默认为 super_admin
     WEB_ADMIN_USERNAME: str = "admin"
     WEB_ADMIN_PASSWORD_HASH: str = ""
     WEB_ADMIN_PASSWORD_PLAIN: str = ""
+
     WEB_ADMIN_SESSION_TTL_SECONDS: int = 60 * 60 * 8   # 会话 8 小时
     WEB_ADMIN_PAGE_SIZE: int = 20                      # 页面默认分页条数
+    WEB_ADMIN_AUDIT_MAX_LEN: int = 5000                # 审计日志 Redis 保留条数
 
 
 # 全局单例，跨模块统一使用 `from configs.settings import settings`
