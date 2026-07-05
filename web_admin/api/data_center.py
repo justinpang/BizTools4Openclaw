@@ -1080,6 +1080,23 @@ def _empty_snapshot(item_id: str) -> dict:
     return {"id": item_id, "source": "fallback", "note": "snapshot not available"}
 
 
+def _safe_execute(operation_name: str, fn, session: dict | None = None) -> dict:
+    """T24: 统一安全执行助手 — 捕获异常、记录日志、返回标准结构。
+
+    usage:
+        return _safe_execute("op_name", lambda: actual_logic(...), session)
+    """
+    try:
+        result = fn()
+        if result is None:
+            return {"code": 0, "msg": "ok", "data": None}
+        return result
+    except Exception as exc:
+        user = session.get("username", "unknown") if session else "unknown"
+        logger.error(f"[T24] {operation_name} failed for user={user}: {exc}")
+        return {"code": 500, "msg": f"操作失败: {exc}", "data": None}
+
+
 # ---------------------------------------------------------------------------
 # T22.1 采集阶段操作 — 权限: ops / super_admin
 # ---------------------------------------------------------------------------

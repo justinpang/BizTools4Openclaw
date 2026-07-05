@@ -20,10 +20,74 @@
   var admin = {
     init: init,
     permissionSet: {},
+    _submitting: false,
     api: function (path, method, body) {
       var opts = { method: method || "GET", headers: { "Content-Type": "application/json" }, credentials: "same-origin" };
       if (body && method && method !== "GET") opts.body = JSON.stringify(body);
       return fetch(path, opts).then(function (r) { return r.json(); });
+    },
+    // T24: 统一安全 API 调用 — 带错误处理、重复提交保护、超时
+    safeApi: function (path, method, body, opts) {
+      opts = opts || {};
+      var timeoutMs = opts.timeout || 15000;
+      // 防重复提交
+      if (opts.preventDoubleSubmit) {
+        if (admin._submitting) {
+          return Promise.reject(new Error("操作进行中，请稍候..."));
+        }
+        admin._submitting = true;
+      }
+      var fetchOpts = { method: method || "GET", headers: { "Content-Type": "application/json" }, credentials: "same-origin" };
+      if (body && method && method !== "GET") fetchOpts.body = JSON.stringify(body);
+
+      var timeoutPromise = new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error("请求超时，请检查网络")); }, timeoutMs);
+      });
+
+      return Promise.race([fetch(path, fetchOpts).then(function (r) { return r.json(); }), timeoutPromise])
+        .then(function (data) {
+          if (opts.preventDoubleSubmit) admin._submitting = false;
+          // 通用非 0 code 处理
+          if (data && typeof data.code !== "undefined" && data.code !== 0) {
+            var msg = data.msg || "操作失败";
+            if (opts.showError !== false) admin.showError(msg);
+            throw new Error(msg);
+          }
+          return data;
+        })
+        .catch(function (err) {
+          if (opts.preventDoubleSubmit) admin._submitting = false;
+          var msg = (err && err.message) ? err.message : "网络异常，请稍后重试";
+          if (opts.showError !== false) admin.showError(msg);
+          throw err;
+        });
+    },
+    // T24: 统一错误提示
+    showError: function (msg) {
+      var existing = document.getElementById("admin-error-toast");
+      if (existing) existing.remove();
+      var toast = document.createElement("div");
+      toast.id = "admin-error-toast";
+      toast.className = "error-toast";
+      toast.textContent = "⚠ " + msg;
+      document.body.appendChild(toast);
+      setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 4000);
+    },
+    // T24: 统一成功提示
+    showSuccess: function (msg) {
+      var existing = document.getElementById("admin-success-toast");
+      if (existing) existing.remove();
+      var toast = document.createElement("div");
+      toast.id = "admin-success-toast";
+      toast.className = "success-toast";
+      toast.textContent = "✓ " + msg;
+      document.body.appendChild(toast);
+      setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2500);
+    },
+    // T24: 空列表渲染
+    renderEmptyState: function (container, message) {
+      if (!container) return;
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">○</div><div class="empty-text">' + (message || "暂无数据") + '</div></div>';
     }
   };
 

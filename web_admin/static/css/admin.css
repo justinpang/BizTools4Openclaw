@@ -261,6 +261,49 @@ code { background: #eef2f7; padding: 2px 6px; border-radius: 3px; font-family: C
   color: #5a6a7e;
 }
 
+/* ========== T24: Toast & Empty State ========== */
+.error-toast, .success-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 18px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 99999;
+  font-size: 13px;
+  animation: toastSlideIn 0.3s ease;
+}
+.error-toast {
+  background: #fee;
+  color: #b33;
+  border: 1px solid #fcc;
+}
+.success-toast {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(100px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.empty-state {
+  padding: 60px 20px;
+  text-align: center;
+  color: #99a8ba;
+  background: #fafbfc;
+  border-radius: 6px;
+  border: 1px dashed #d0d7e0;
+}
+.empty-state .empty-icon {
+  font-size: 48px;
+  opacity: 0.3;
+  margin-bottom: 12px;
+}
+.empty-state .empty-text {
+  font-size: 14px;
+}
+
 
 /* ---------- T22.1) Manual operation dialog ---------- */
 .manual-dialog-mask {

@@ -6,6 +6,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from infra.logger_setup import get_logger
 from web_admin.api import (
@@ -39,6 +40,16 @@ def mount_on(app: FastAPI) -> None:
 
     # 1) API 路由（/api/admin/*）
     api_router = FastAPI(title="WebAdmin API")
+
+    # T24: 全局异常处理 — 所有未捕获异常返回标准 JSON，避免 500 页面
+    @api_router.exception_handler(Exception)
+    async def _global_exception_handler(request, exc):
+        logger.error(f"[T24] API error on {request.method} {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={"code": 500, "msg": f"服务器异常: {exc}", "data": None},
+        )
+
     api_router.include_router(dashboard_router)
     api_router.include_router(spider_router)
     api_router.include_router(leads_router)
