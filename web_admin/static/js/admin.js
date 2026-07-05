@@ -752,50 +752,191 @@
    * 9) Stubs for earlier features (spider/leads/channels/sales/audit/etc.)
    *    These keep the pages.html references working without 404 in console.
    * ---------------------------------------------------------------------- */
+  // 根据渠道类型渲染自定义字段表单
+  admin.renderChannelForm = function (channel) {
+    var container = document.getElementById("channel-specific-fields");
+    if (!container) return;
+    if (!channel) {
+      container.innerHTML = '<span class="muted">请选择渠道类型以显示自定义参数</span>';
+      return;
+    }
+    var html = "";
+    // 公共字段：keywords + region
+    html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+    html += '  <label>关键词(逗号分隔) <input type="text" name="keywords" form="task-create-form" placeholder="例如：商机,合作,采购"/></label>';
+    html += '  <label>地域 <input type="text" name="region" form="task-create-form" placeholder="例如：北京"/></label>';
+    html += '</div>';
+    // 渠道特有字段
+    if (channel === "generic_web") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>URL模板 <input type="text" name="url_template" form="task-create-form" placeholder="https://example.com/search?q={keyword}"/></label>';
+      html += '  <label>站点类型 <input type="text" name="site_type" form="task-create-form" placeholder="门户/论坛/资讯"/></label>';
+      html += '  <label>抓取深度 <input type="number" name="max_depth" form="task-create-form" value="3" min="1" max="10"/></label>';
+      html += '</div>';
+    } else if (channel === "short_video") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>平台 <select name="platform" form="task-create-form"><option value="">不限</option><option value="抖音">抖音</option><option value="快手">快手</option><option value="视频号">视频号</option></select></label>';
+      html += '  <label>最少点赞数 <input type="number" name="min_likes" form="task-create-form" value="0" min="0"/></label>';
+      html += '  <label>最少评论数 <input type="number" name="min_comments" form="task-create-form" value="0" min="0"/></label>';
+      html += '  <label>最少浏览数 <input type="number" name="min_views" form="task-create-form" value="0" min="0"/></label>';
+      html += '</div>';
+    } else if (channel === "xhs") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>笔记类型 <select name="post_type" form="task-create-form"><option value="">不限</option><option value="图文">图文</option><option value="视频">视频</option></select></label>';
+      html += '  <label>最少点赞数 <input type="number" name="min_likes" form="task-create-form" value="0" min="0"/></label>';
+      html += '  <label>最少评论数 <input type="number" name="min_comments" form="task-create-form" value="0" min="0"/></label>';
+      html += '</div>';
+    } else if (channel === "qa_platform") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>行业领域 <input type="text" name="industry" form="task-create-form" placeholder="例如：互联网/金融/教育"/></label>';
+      html += '  <label>最少回答数 <input type="number" name="min_answers" form="task-create-form" value="0" min="0"/></label>';
+      html += '  <label>最少浏览数 <input type="number" name="min_views" form="task-create-form" value="0" min="0"/></label>';
+      html += '</div>';
+    } else if (channel === "b2b_supply") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>行业领域 <input type="text" name="industry" form="task-create-form" placeholder="例如：制造业/批发/零售"/></label>';
+      html += '  <label>企业关键词 <input type="text" name="company_keywords" form="task-create-form" placeholder="例如：科技,制造,供应"/></label>';
+      html += '  <label>价格区间 <input type="text" name="filter_price" form="task-create-form" placeholder="例如：1000-10000"/></label>';
+      html += '  <label>筛选规则 <input type="text" name="filter_rule" form="task-create-form" placeholder="例如：近3个月新发布"/></label>';
+      html += '</div>';
+    } else if (channel === "bidding") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>招投标类型 <select name="bid_type" form="task-create-form"><option value="">不限</option><option value="招标公告">招标公告</option><option value="中标公告">中标公告</option><option value="采购公告">采购公告</option></select></label>';
+      html += '  <label>行业领域 <input type="text" name="industry" form="task-create-form" placeholder="例如：基建/IT/医疗"/></label>';
+      html += '  <label>发布天数(近N天) <input type="number" name="publish_days" form="task-create-form" value="30" min="1"/></label>';
+      html += '</div>';
+    } else if (channel === "company_biz") {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
+      html += '  <label>企业关键词 <input type="text" name="company_keywords" form="task-create-form" placeholder="例如：科技,投资,咨询"/></label>';
+      html += '  <label>行业领域 <input type="text" name="industry" form="task-create-form" placeholder="例如：互联网/金融/制造业"/></label>';
+      html += '  <label>地域 <input type="text" name="region" form="task-create-form" placeholder="例如：北京/上海/广东"/></label>';
+      html += '  <label>最低注册资本(万元) <input type="number" name="registered_capital_min" form="task-create-form" value="0" min="0"/></label>';
+      html += '  <label>成立年限(年) <input type="number" name="establishment_years" form="task-create-form" value="0" min="0"/></label>';
+      html += '</div>';
+    } else {
+      html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;"><span class="muted">该渠道暂无可配置自定义参数</span></div>';
+    }
+    container.innerHTML = html;
+  };
+
+  // 创建爬虫任务（提交表单）
   admin.createSpiderTask = function (event) {
     if (event) event.preventDefault();
     if (admin._submitting) {
-      admin.showToast("操作进行中，请稍候...", "error");
+      admin.showError("操作进行中，请稍候...");
       return false;
     }
     var form = document.getElementById("task-create-form");
     if (!form) {
-      admin.showToast("未找到任务表单", "error");
+      admin.showError("未找到任务表单");
       return false;
     }
-    // 收集所有字段（包括 form="task-create-form" 的外部合规字段）
-    var fd = new FormData(form);
-    // 复选框特殊处理：未勾选的字段后端期望 "false"
-    ["compliance_agreed", "compliance_privacy", "compliance_site_verified"].forEach(function (k) {
-      var els = document.querySelectorAll('[name="' + k + '"][form="task-create-form"]');
-      els.forEach(function (el) {
-        if (el.type === "checkbox") {
-          if (el.checked) fd.set(k, "true");
-          else if (!fd.has(k)) fd.set(k, "false");
-        }
-      });
+    // 1) 获取渠道值：优先从外部下拉框（task-channel-select），其次从隐藏 input
+    var sel = document.getElementById("task-channel-select");
+    var hidden = document.getElementById("task-channel-hidden");
+    var channelVal = (sel && sel.value) || (hidden && hidden.value) || "";
+    if (!channelVal) {
+      admin.showError("请先选择渠道类型");
+      return false;
+    }
+    // 2) 收集字段：先获取表单内部字段，再手动获取所有 form="task-create-form" 的外部字段
+    var fieldMap = {};
+    // 表单内部字段
+    var formEls = form.querySelectorAll("input[name], select[name], textarea[name]");
+    formEls.forEach(function (el) {
+      if (!el.name) return;
+      if (el.type === "checkbox") fieldMap[el.name] = el.checked ? "true" : "false";
+      else fieldMap[el.name] = el.value || "";
     });
-    // 提交
+    // 外部字段（form="task-create-form" 的所有字段）：覆盖或补充
+    var externalEls = document.querySelectorAll('[form="task-create-form"]');
+    externalEls.forEach(function (el) {
+      if (!el.name) return;
+      if (el.type === "checkbox") fieldMap[el.name] = el.checked ? "true" : "false";
+      else fieldMap[el.name] = el.value || "";
+    });
+    // 3) 确保 channel 和 spider_name 值正确设置（覆盖所有可能的默认值）
+    fieldMap["channel"] = channelVal;
+    fieldMap["spider_name"] = channelVal;
+    // 4) 前端必填项验证（避免直接返回400）
+    var requiredChecks = [
+      { name: "compliance_agreed", mustBeTrue: true, msg: "请勾选《数据采集合规协议》" },
+      { name: "compliance_privacy", mustBeTrue: true, msg: "请勾选隐私采集承诺（确认不采集隐私信息）" },
+      { name: "compliance_site_verified", mustBeTrue: true, msg: "请勾选采集站点核对（确认不含违规站点）" },
+    ];
+    var requiredTextChecks = [
+      { name: "compliance_data_purpose", msg: "请选择数据用途" },
+      { name: "compliance_retention", msg: "请选择数据留存周期" },
+    ];
+    for (var i = 0; i < requiredChecks.length; i++) {
+      var rc = requiredChecks[i];
+      var v = fieldMap[rc.name];
+      if (!v || String(v).trim().toLowerCase() === "false" || String(v).trim() === "0" || String(v).trim() === "") {
+        admin.showError(rc.msg);
+        return false;
+      }
+    }
+    for (var j = 0; j < requiredTextChecks.length; j++) {
+      var tc = requiredTextChecks[j];
+      var tv = fieldMap[tc.name];
+      if (!tv || !String(tv).trim()) {
+        admin.showError(tc.msg);
+        return false;
+      }
+    }
+    // 5) job_id 如为空则自动生成（后端也会自动生成，但前端可以更友好）
+    if (!fieldMap["job_id"] || !String(fieldMap["job_id"]).trim()) {
+      fieldMap["job_id"] = "spider_" + String(Math.floor(Date.now() / 1000));
+    }
+    // 6) 构造 URL-encoded 参数
+    var params = new URLSearchParams();
+    for (var key in fieldMap) {
+      if (fieldMap.hasOwnProperty(key)) {
+        params.append(key, fieldMap[key]);
+      }
+    }
+    // 调试信息：实际发送的字段
+    console.log("提交任务字段:", fieldMap);
+    // 7) 提交
     admin._submitting = true;
-    var params = new URLSearchParams(fd);
     fetch("/api/admin/spider/task", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       credentials: "same-origin",
       body: params.toString(),
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) {
+          // 400/422 等错误：尝试解析 JSON 获取 detail
+          return r.json().then(function (errData) {
+            return { _error: true, _raw: errData };
+          }).catch(function () {
+            return { _error: true, _status: r.status };
+          });
+        }
+        return r.json();
+      })
       .then(function (data) {
         admin._submitting = false;
+        console.log("服务器响应:", data);
+        // 处理错误响应（FastAPI HTTPException 返回 {"detail": "..."}）
+        if (data && data._error) {
+          var detail = (data._raw && (data._raw.detail || data._raw.msg));
+          var errMsg = detail || (data._raw && JSON.stringify(data._raw)) || ("服务器错误 " + (data._status || ""));
+          admin.showError(errMsg);
+          return;
+        }
+        // 处理标准响应格式
         if (data && typeof data.code !== "undefined" && data.code === 0) {
           var msg = "任务保存成功";
           if (data.needs_approval) msg += "（待合规审核通过后可启动）";
           admin.showSuccess(msg);
           // 刷新任务列表
-          if (typeof admin.loadRecentTasks === "function") admin.loadRecentTasks();
           if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
-          // 重置表单
+          if (typeof admin.loadSpiderFiltered === "function") admin.loadSpiderFiltered();
+          // 重置表单并重新渲染渠道字段
           form.reset();
+          if (typeof admin.renderChannelForm === "function") admin.renderChannelForm(channelVal);
         } else {
           admin.showError((data && data.msg) ? data.msg : "任务保存失败");
         }
@@ -805,6 +946,53 @@
         admin.showError("网络异常：" + (err && err.message ? err.message : err));
       });
     return false;
+  };
+
+  // 加载任务列表（带过滤）
+  admin.loadSpiderFiltered = function () {
+    var tbody = document.getElementById("tasks-body");
+    if (!tbody) return;
+    // 如果已存在 loadSpiderTasks，直接调用它
+    if (typeof admin.loadSpiderTasks === "function") {
+      admin.loadSpiderTasks();
+      return;
+    }
+    // 兼容旧逻辑
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">加载中...</td></tr>';
+    fetch("/api/admin/spider/tasks")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var items = (data && data.items) || (data && data.data && data.data.items) || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无采集任务</td></tr>';
+          return;
+        }
+        var __zhTaskStatus = {
+          "DRAFT": "草稿", "READY": "就绪", "RUNNING": "运行中",
+          "PAUSED": "已暂停", "COMPLETED": "已完成", "FAILED": "失败",
+          "TERMINATED": "已终止", "PENDING_APPROVAL": "待审核", "REJECTED": "已驳回"
+        };
+        var rows = items.map(function (item) {
+          var status = __zhTaskStatus[item.status] || item.status || "未知";
+          return '<tr data-job-id="' + (item.job_id || "") + '">' +
+            '<td><code>' + (item.job_id || "") + '</code></td>' +
+            '<td>' + (item.channel || "") + '</td>' +
+            '<td>' + (item.task_name || "") + '</td>' +
+            '<td>' + status + '</td>' +
+            '<td>' + (item.success || 0) + '</td>' +
+            '<td>' + (item.failed || 0) + '</td>' +
+            '<td>' + (item.next_run || "-") + '</td>' +
+            '<td class="row-actions">' +
+              '<button class="btn btn-sm" onclick="admin.runSpiderTask(\'' + (item.job_id || "") + '\')">立即运行</button> ' +
+              '<button class="btn btn-sm" onclick="admin.deleteSpiderTask(\'' + (item.job_id || "") + '\')">删除</button>' +
+            '</td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = rows.join("");
+      })
+      .catch(function (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>';
+      });
   };
 
   admin.loadSpiderTasks = function () {
@@ -890,6 +1078,85 @@
         if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
       })
       .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.pauseTask = function (jobId) {
+    if (!confirm("确认暂停任务：" + jobId + "？")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/pause", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("任务已暂停");
+        else admin.showError((data && data.msg) || "暂停失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.resumeTask = function (jobId) {
+    if (!confirm("确认恢复任务：" + jobId + "？")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/resume", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("任务已恢复");
+        else admin.showError((data && data.msg) || "恢复失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.retryTask = function (jobId) {
+    if (!confirm("确认重试任务：" + jobId + "？（从中断处继续采集）")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/retry", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("重试已启动");
+        else admin.showError((data && data.msg) || "重试失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.terminateTask = function (jobId) {
+    if (!confirm("确认终止任务：" + jobId + "？（终止后不可恢复）")) return;
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/terminate", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.code === 0) admin.showSuccess("任务已终止");
+        else admin.showError((data && data.msg) || "终止失败");
+        if (typeof admin.loadSpiderTasks === "function") admin.loadSpiderTasks();
+      })
+      .catch(function (e) { admin.showError("网络异常：" + e.message); });
+  };
+
+  admin.deleteTask = function (jobId) {
+    // 别名：与 list 页的 deleteSpiderTask 保持一致
+    if (typeof admin.deleteSpiderTask === "function") admin.deleteSpiderTask(jobId);
+  };
+
+  admin.loadSpiderLogs = function () {
+    var jobIdEl = document.getElementById("log-job-id");
+    var jobId = jobIdEl ? jobIdEl.value.trim() : "";
+    if (!jobId) {
+      admin.showError("请输入任务ID");
+      return;
+    }
+    var out = document.getElementById("logs-out");
+    if (out) out.textContent = "加载中...";
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/logs")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (out) {
+          var items = (data && data.items) || [];
+          if (items.length === 0) {
+            out.textContent = "(暂无日志)";
+          } else {
+            out.textContent = items.map(function (x) { return String(x); }).join("\n");
+          }
+        }
+      })
+      .catch(function (e) {
+        if (out) out.textContent = "加载失败：" + e.message;
+      });
   };
 
   admin.loadNotificationsList = function () { /* stub */ };
