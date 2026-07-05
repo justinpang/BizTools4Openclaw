@@ -8,6 +8,8 @@ from web_admin.api.lead_mgmt import router as leads_router
 from web_admin.api.channel_account import router as channels_router
 from web_admin.api.sales_mgmt import router as sales_router
 from web_admin.api.audit_log import router as audit_router
+from web_admin.api.audit_enhanced import router as audit_enhanced_router
+from web_admin.api.accounts import router as accounts_router
 
 __all__ = [
     "dashboard_router",
@@ -16,4 +18,6 @@ __all__ = [
     "channels_router",
     "sales_router",
     "audit_router",
+    "audit_enhanced_router",
+    "accounts_router",
 ]

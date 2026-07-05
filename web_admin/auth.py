@@ -1,4 +1,4 @@
-"""web_admin/auth — 登录与会话管理（账号密码 + Redis 会话）。"""
+"""web_admin/auth — 登录与会话管理（多账号 + 四级角色权限 + Redis 会话，进程内降级）。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import time
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
 
 from infra.logger_setup import get_logger
 from infra.redis_client import get_redis
@@ -20,9 +19,77 @@ SESSION_COOKIE = "admin_session"
 REDIS_PREFIX = "web_admin:session:"
 _PASSWORD_HASH_KEY = "web_admin:password_hash"
 
+# ---------------------------------------------------------------------------
+# 角色定义 + 权限矩阵
+# ---------------------------------------------------------------------------
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_OPS = "ops"
+ROLE_SALES = "sales"
+ROLE_COMPLIANCE = "compliance"
+VALID_ROLES = {ROLE_SUPER_ADMIN, ROLE_OPS, ROLE_SALES, ROLE_COMPLIANCE}
 
-# ---- 密码哈希（降级方案：优先尝试 bcrypt，否则用内置 hashlib + salt） ----
+# 角色中文标签（用于 UI 展示）
+ROLE_LABELS = {
+    ROLE_SUPER_ADMIN: "超级管理员",
+    ROLE_OPS: "运营岗",
+    ROLE_SALES: "销售岗",
+    ROLE_COMPLIANCE: "合规岗",
+}
 
+# 按钮/操作级别权限：每个角色对应的权限标识集合
+# 说明：按钮级权限由前端 data-requires-permission 控制展示，后端 API handler 中再次校验
+ROLE_PERMISSIONS: dict[str, set[str]] = {
+    ROLE_SUPER_ADMIN: {
+        "btn.dashboard.view",
+        "btn.spider.view",
+        "btn.spider.create",
+        "btn.spider.delete",
+        "btn.leads.view",
+        "btn.leads.approve",
+        "btn.leads.reject",
+        "btn.leads.add_blacklist",
+        "btn.channels.view",
+        "btn.channels.create",
+        "btn.channels.view_secret",
+        "btn.sales.view",
+        "btn.sales.create",
+        "btn.sales.assign",
+        "btn.sales.record_followup",
+        "btn.audit.view",
+        "btn.audit.export",
+        "btn.system.accounts",
+        "btn.system.reset_password",
+        "btn.system.view_secret",
+    },
+    ROLE_OPS: {
+        "btn.dashboard.view",
+        "btn.spider.view",
+        "btn.spider.create",
+        "btn.leads.view",
+        "btn.leads.approve",
+        "btn.leads.reject",
+        "btn.leads.add_blacklist",
+        "btn.audit.view",
+    },
+    ROLE_SALES: {
+        "btn.dashboard.view",
+        "btn.leads.view",
+        "btn.sales.view",
+        "btn.sales.assign",
+        "btn.sales.record_followup",
+    },
+    ROLE_COMPLIANCE: {
+        "btn.dashboard.view",
+        "btn.channels.view",
+        "btn.channels.create",
+        "btn.audit.view",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# 密码哈希（bcrypt 优先，否则内置 hashlib + salt 降级）
+# ---------------------------------------------------------------------------
 def _hashlib_hash(password: str) -> str:
     """内置降级哈希：sha256 + 随机 salt，格式 'h2|{salt_b64}|{hash_b64}'。"""
     import base64
@@ -43,8 +110,7 @@ def _hashlib_verify(password: str, hashed: str) -> bool:
         expected = base64.b64decode(parts[2])
         actual = hashlib.sha256(salt + password.encode("utf-8")).digest()
         return secrets.compare_digest(actual, expected)
-    except Exception as exc:
-        logger.info(f"verify failed: {exc}")
+    except Exception:
         return False
 
 
@@ -68,43 +134,165 @@ def _verify_password(password: str, hashed: str) -> bool:
     return _hashlib_verify(password, hashed)
 
 
-def get_or_create_password_hash() -> str | None:
-    """返回已有的密码 hash；如果只有 plaintext，首次 hash 后写入 Redis。"""
-    # 1) env 里的 hash 优先
-    env_hash = settings.web_admin.WEB_ADMIN_PASSWORD_HASH or ""
-    if env_hash:
-        return env_hash
-    # 2) Redis 缓存 hash
-    try:
-        r = get_redis()
-        if r is not None:
-            cached = r.get(_PASSWORD_HASH_KEY)
-            if cached:
-                return cached.decode("utf-8") if isinstance(cached, bytes) else str(cached)
-    except Exception:
-        pass
-    # 3) env 里的 plaintext → 一次性 hash 并缓存
-    plain = settings.web_admin.WEB_ADMIN_PASSWORD_PLAIN or ""
-    if plain:
-        new_hash = _hash_password(plain)
+def _normalize_account(acc: dict) -> dict | None:
+    """将 env 中的一项账号配置标准化；字段缺失则忽略该账号。"""
+    username = (acc.get("username") or "").strip()
+    if not username:
+        return None
+    role = (acc.get("role") or ROLE_SUPER_ADMIN).strip()
+    if role not in VALID_ROLES:
+        logger.warning(f"web_admin: 账号 {username} 的 role 无效: {role}，忽略")
+        return None
+    password_hash = (acc.get("password_hash") or "").strip()
+    password_plain = (acc.get("password_plain") or "").strip()
+    disabled = bool(acc.get("disabled"))
+    created_at = int(acc.get("created_at") or time.time())
+    # 若有 password_plain 但无 password_hash，则现场 hash 一次（不持久化明文）
+    if not password_hash and password_plain:
+        password_hash = _hash_password(password_plain)
+    return {
+        "username": username,
+        "role": role,
+        "password_hash": password_hash,
+        "disabled": disabled,
+        "created_at": created_at,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 账号加载
+# ---------------------------------------------------------------------------
+def load_accounts() -> list[dict]:
+    """从 .env 解析账号配置。返回 list[dict]，字段同 _normalize_account。"""
+    raw = (settings.web_admin.WEB_ADMIN_ACCOUNTS_JSON or "").strip()
+    if raw:
         try:
-            r = get_redis()
-            if r is not None:
-                r.set(_PASSWORD_HASH_KEY, new_hash)
-        except Exception:
-            pass
-        logger.info("web_admin: 初始化密码 hash 完成")
-        return new_hash
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                raise ValueError("WEB_ADMIN_ACCOUNTS_JSON 必须是 JSON 数组")
+            accounts: list[dict] = []
+            seen: set[str] = set()
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                acc = _normalize_account(item)
+                if acc is None:
+                    continue
+                if acc["username"] in seen:
+                    logger.warning(f"web_admin: 账号 {acc['username']} 重复，忽略重复项")
+                    continue
+                seen.add(acc["username"])
+                accounts.append(acc)
+            if accounts:
+                logger.info(f"web_admin: 从 WEB_ADMIN_ACCOUNTS_JSON 加载 {len(accounts)} 个账号")
+                return accounts
+        except Exception as exc:
+            logger.warning(f"web_admin: WEB_ADMIN_ACCOUNTS_JSON 解析失败: {exc}，回退到单账号模式")
+
+    # 回退：单账号模式
+    username = settings.web_admin.WEB_ADMIN_USERNAME or "admin"
+    password_hash = settings.web_admin.WEB_ADMIN_PASSWORD_HASH or ""
+    if not password_hash:
+        password_plain = settings.web_admin.WEB_ADMIN_PASSWORD_PLAIN or ""
+        if password_plain:
+            password_hash = _hash_password(password_plain)
+    logger.info(f"web_admin: 单账号模式 username={username}")
+    return [{
+        "username": username,
+        "role": ROLE_SUPER_ADMIN,
+        "password_hash": password_hash,
+        "disabled": False,
+        "created_at": int(time.time()),
+    }]
+
+
+_ACCOUNTS_CACHE_TS: float = 0
+_ACCOUNTS_CACHE: list[dict] = []
+
+
+def reload_accounts() -> None:
+    """强制重载账号列表（账号变更后调用）。"""
+    global _ACCOUNTS_CACHE, _ACCOUNTS_CACHE_TS
+    _ACCOUNTS_CACHE = load_accounts()
+    _ACCOUNTS_CACHE_TS = time.time()
+
+
+def get_accounts() -> list[dict]:
+    """获取账号列表（带进程级惰性缓存，每 5 分钟重新解析一次）。"""
+    global _ACCOUNTS_CACHE, _ACCOUNTS_CACHE_TS
+    now = time.time()
+    if now - _ACCOUNTS_CACHE_TS > 300:
+        _ACCOUNTS_CACHE = load_accounts()
+        _ACCOUNTS_CACHE_TS = now
+    return _ACCOUNTS_CACHE
+
+
+def _ensure_cache_populated() -> None:
+    """首次访问时确保账号缓存已填充（供动态账号创建功能使用）。"""
+    get_accounts()
+
+
+def add_in_memory_account(username: str, password_plain: str, *,
+                          role: str = ROLE_OPS, disabled: bool = False) -> bool:
+    """在进程内缓存中新增账号（不持久化到 .env）。
+
+    注意：仅在 WEB_ADMIN_ACCOUNTS_JSON 启用时有效（单账号模式下禁止动态创建）。
+    返回是否新增成功。
+    """
+    _ensure_cache_populated()
+    if username in {a["username"] for a in _ACCOUNTS_CACHE}:
+        return False
+    if role not in VALID_ROLES:
+        return False
+    if not password_plain:
+        return False
+    new_acc = {
+        "username": username,
+        "role": role,
+        "password_hash": _hash_password(password_plain),
+        "disabled": disabled,
+        "created_at": int(time.time()),
+    }
+    _ACCOUNTS_CACHE.append(new_acc)
+    return True
+
+
+def invalidate_account_sessions(username: str) -> None:
+    """禁用/重置密码后：使该账号下的所有登录会话立即失效。"""
+    invalidate_user_sessions(username)
+
+
+def is_super_admin(session_or_role: str | dict | None) -> bool:
+    """判断某会话/角色是否为 super_admin。"""
+    if isinstance(session_or_role, dict):
+        role = session_or_role.get("role") or ""
+    else:
+        role = (session_or_role or "").strip()
+    return role == ROLE_SUPER_ADMIN
+
+
+def lookup_account(username: str) -> dict | None:
+    for acc in get_accounts():
+        if acc["username"] == username:
+            return acc
     return None
 
 
-# ---- 会话 ----
+# ---------------------------------------------------------------------------
+# 会话（Redis + 进程内 dict 降级）
+# ---------------------------------------------------------------------------
+def create_session(username: str, *, role: str | None = None, client_ip: str = "") -> str:
+    """创建 session，返回 session_token。
 
-def create_session(username: str, *, client_ip: str) -> str:
-    """创建 session，返回 session_token。"""
+    role 可选：未传时默认 super_admin（保持向后兼容）。
+    client_ip 可选：兼容旧签名。
+    """
     token = secrets.token_urlsafe(32)
+    if not role:
+        role = ROLE_SUPER_ADMIN
     session = {
         "username": username,
+        "role": role,
         "ip": client_ip,
         "created_at": int(time.time()),
         "last_seen": int(time.time()),
@@ -117,10 +305,12 @@ def create_session(username: str, *, client_ip: str) -> str:
                 value=json.dumps(session, ensure_ascii=False),
                 ex=int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
             )
+            # 同时记录 user -> token 列表，便于单账号登出 / 重置密码使所有 session 失效
+            r.lpush(REDIS_PREFIX + "by_user:" + username, token)
+            r.ltrim(REDIS_PREFIX + "by_user:" + username, 0, 49)
     except Exception as exc:
         logger.info(f"redis session create fallback: {exc}")
-        # 降级：进程内 dict（用于单节点、开发期）
-        _INPROC_SESSION_CACHE[token] = (session, time.time() + settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS)
+    _INPROC_SESSION_CACHE[token] = (session, time.time() + settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS)
     return token
 
 
@@ -129,13 +319,11 @@ def _get_session_raw(token: str) -> dict | None:
         r = get_redis()
         if r is not None:
             raw = r.get(REDIS_PREFIX + token)
-            if raw is None:
-                return None
-            data = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-            return json.loads(data)
+            if raw is not None:
+                data = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+                return json.loads(data)
     except Exception:
         pass
-    # 降级到进程内
     entry = _INPROC_SESSION_CACHE.get(token)
     if entry is None or entry[1] < time.time():
         return None
@@ -152,8 +340,24 @@ def delete_session(token: str) -> None:
     _INPROC_SESSION_CACHE.pop(token, None)
 
 
+def invalidate_user_sessions(username: str) -> None:
+    """使某账号下所有 session 失效（重置密码/禁用账号时调用）。"""
+    try:
+        r = get_redis()
+        if r is not None:
+            key = REDIS_PREFIX + "by_user:" + username
+            tokens = r.lrange(key, 0, -1)
+            for t in tokens:
+                r.delete(t.decode("utf-8") if isinstance(t, bytes) else str(t))
+            r.delete(key)
+    except Exception:
+        pass
+    for tk, (sess, _) in list(_INPROC_SESSION_CACHE.items()):
+        if sess.get("username") == username:
+            _INPROC_SESSION_CACHE.pop(tk, None)
+
+
 def refresh_session_ttl(token: str, session: dict) -> None:
-    """每次成功鉴权，刷新 session TTL。"""
     try:
         session["last_seen"] = int(time.time())
         r = get_redis()
@@ -164,31 +368,60 @@ def refresh_session_ttl(token: str, session: dict) -> None:
                 ex=int(settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS),
             )
     except Exception:
-        # 降级：进程内重写
         _INPROC_SESSION_CACHE[token] = (session, time.time() + settings.web_admin.WEB_ADMIN_SESSION_TTL_SECONDS)
 
 
 _INPROC_SESSION_CACHE: dict[str, tuple[dict, float]] = {}
 
 
-# ---- Depends ----
+# ---------------------------------------------------------------------------
+# 权限判定
+# ---------------------------------------------------------------------------
+def get_permissions_for_role(role: str) -> set[str]:
+    """返回指定角色的权限标识集合。"""
+    return set(ROLE_PERMISSIONS.get(role, set()))
+
+
+def has_permission(role: str, perm: str) -> bool:
+    return perm in get_permissions_for_role(role)
+
+
+def role_can_view_menu(role: str, active_key: str) -> bool:
+    """菜单可见性：基于 active_key 判断某角色是否能访问该菜单。"""
+    map_: dict[str, set[str]] = {
+        "dashboard": VALID_ROLES,
+        "data_center": VALID_ROLES,
+        "spider": {ROLE_SUPER_ADMIN, ROLE_OPS},
+        "leads": {ROLE_SUPER_ADMIN, ROLE_SALES},
+        "channels": {ROLE_SUPER_ADMIN, ROLE_COMPLIANCE},
+        "sales": {ROLE_SUPER_ADMIN, ROLE_SALES},
+        "audit_log": {ROLE_SUPER_ADMIN, ROLE_OPS, ROLE_COMPLIANCE},
+        "system": {ROLE_SUPER_ADMIN},
+        "accounts": {ROLE_SUPER_ADMIN},
+        "empty": VALID_ROLES,
+        "403": VALID_ROLES,
+    }
+    return role in map_.get(active_key, set())
+
 
 async def require_admin(request: Request) -> dict[str, Any]:
-    """依赖函数：要求已登录。返回 session 字典。"""
+    """依赖函数：要求已登录。返回 session 字典（含 role 字段）。"""
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
-        return _reject(request)
+        raise _unauthenticated(request)
     session = _get_session_raw(token)
     if not session:
-        return _reject(request)
+        raise _unauthenticated(request)
+    # 补齐向后兼容字段
+    session.setdefault("role", ROLE_SUPER_ADMIN)
     refresh_session_ttl(token, session)
     return session
 
 
-def _reject(request: Request):
-    # 浏览器页面请求 → 重定向到登录页；API 请求 → 401 JSON
+def _unauthenticated(request: Request) -> HTTPException:
     accept = request.headers.get("accept", "")
-    if "application/json" in accept or (request.method == "GET" and "/api/admin/" in str(request.url)):
+    is_api = "/api/admin/" in str(request.url.path)
+    if is_api or "application/json" in accept:
         raise HTTPException(status_code=401, detail="未登录或会话已失效")
     raise HTTPException(status_code=401, detail="未登录或会话已失效")
 
@@ -200,42 +433,118 @@ async def get_current_admin(request: Request) -> dict[str, Any] | None:
         return None
     session = _get_session_raw(token)
     if session:
+        session.setdefault("role", ROLE_SUPER_ADMIN)
         refresh_session_ttl(token, session)
         return session
     return None
 
 
-# ---- 登录/登出接口（供 web_admin.main 中直接调用 handler，或在 pages.py 中使用） ----
+class _PermissionDep:
+    """FastAPI 依赖函数生成器：校验 session 是否具备指定权限标识。"""
 
-def handle_login_post(username: str, password: str, *, client_ip: str) -> tuple[bool, str, str]:
+    def __init__(self, perm: str, *, redirect_on_html: bool = True):
+        self.perm = perm
+        self.redirect_on_html = redirect_on_html
+
+    async def __call__(self, session: dict = Depends(require_admin)) -> dict:
+        role = session.get("role") or ROLE_SUPER_ADMIN
+        if not has_permission(role, self.perm):
+            raise HTTPException(status_code=403, detail={"code": 403, "msg": f"权限不足（缺少 {self.perm}）"})
+        return session
+
+
+def require_permission(request: Request, perm: str) -> dict:
+    """在 handler 中主动调用：校验登录 + 具备指定权限；失败则抛 HTTPException(401/403)。
+
+    用法（推荐在 API handler 中使用）：
+        @router.get("/accounts")
+        async def list_accounts(request: Request):
+            session = require_permission(request, "btn.system.accounts")
+            ...
+
+    另一种用法（作为 Depends 装饰参数保留兼容）：
+        @router.get("/accounts")
+        async def list_accounts(session: dict = Depends(_PermissionDep("btn.system.accounts"))):
+            ...
     """
-    返回 (是否成功, session_token, 消息)。
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录")
+    session = _get_session_raw(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="会话已失效")
+    session.setdefault("role", ROLE_SUPER_ADMIN)
+    refresh_session_ttl(token, session)
+    role = session.get("role") or ROLE_SUPER_ADMIN
+    if not has_permission(role, perm):
+        raise HTTPException(status_code=403, detail=f"权限不足（缺少 {perm}）")
+    return session
+
+
+def permission_depends(perm: str) -> Any:
+    """返回 Depends 工厂（供 FastAPI 路径函数参数使用）。
+
+    用法：
+        @router.get("/accounts")
+        async def list_accounts(session: dict = Depends(permission_depends("btn.system.accounts"))):
+            ...
+    """
+    return Depends(_PermissionDep(perm))
+
+
+# ---------------------------------------------------------------------------
+# 登录处理
+# ---------------------------------------------------------------------------
+def handle_login_post(username: str, password: str, *, client_ip: str) -> tuple[bool, str, str, str]:
+    """
+    返回 (是否成功, session_token, 消息, 角色)。
     由调用方（pages.py）负责设置 Cookie。
     """
     if not username or not password:
-        return False, "", "账号/密码不能为空"
-    expected_username = settings.web_admin.WEB_ADMIN_USERNAME or "admin"
-    if username != expected_username:
-        logger.warning(f"web_admin login fail: unknown user {username} from {client_ip}")
-        return False, "", "账号或密码错误"
-
-    password_hash = get_or_create_password_hash()
+        return False, "", "账号/密码不能为空", ""
+    acc = lookup_account(username)
+    if acc is None or acc.get("disabled"):
+        logger.warning(f"web_admin login fail: unknown/disabled user {username} from {client_ip}")
+        return False, "", "账号或密码错误", ""
+    password_hash = acc.get("password_hash") or ""
     if not password_hash:
-        logger.warning("web_admin: 未配置密码，禁止登录")
-        return False, "", "管理员密码未配置"
-
+        logger.warning(f"web_admin: 账号 {username} 未配置密码哈希，禁止登录")
+        return False, "", "管理员密码未配置", ""
     if not _verify_password(password, password_hash):
-        logger.warning(f"web_admin login fail: wrong password from {client_ip}")
-        return False, "", "账号或密码错误"
+        logger.warning(f"web_admin login fail: wrong password for {username} from {client_ip}")
+        return False, "", "账号或密码错误", ""
+    token = create_session(username, role=acc["role"], client_ip=client_ip)
+    return True, token, "登录成功", acc["role"]
 
-    token = create_session(username, client_ip=client_ip)
-    return True, token, "登录成功"
 
-
+# ---------------------------------------------------------------------------
+# 导出 / 暴露给其他模块使用
+# ---------------------------------------------------------------------------
 __all__ = [
     "SESSION_COOKIE",
+    "ROLE_SUPER_ADMIN",
+    "ROLE_OPS",
+    "ROLE_SALES",
+    "ROLE_COMPLIANCE",
+    "VALID_ROLES",
+    "ROLE_LABELS",
+    "ROLE_PERMISSIONS",
     "require_admin",
     "get_current_admin",
+    "require_permission",
+    "permission_depends",
+    "has_permission",
+    "is_super_admin",
+    "role_can_view_menu",
+    "get_permissions_for_role",
     "handle_login_post",
     "delete_session",
+    "invalidate_user_sessions",
+    "invalidate_account_sessions",
+    "get_accounts",
+    "lookup_account",
+    "reload_accounts",
+    "add_in_memory_account",
+    "_verify_password",
+    "_hash_password",
 ]
