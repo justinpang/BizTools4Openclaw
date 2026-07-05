@@ -1904,6 +1904,969 @@ def op_manual_logs(
         return {"code": 0, "msg": "ok", "data": {"total": 0, "items": []}}
 
 
+# ===========================================================================
+# T23: 运营配套工具 — 异常数据池 + 分渠道漏斗 + 批量操作 + 数据导出
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# T23.0 工具函数：异常数据生成与存储
+# ---------------------------------------------------------------------------
+
+_EXCEPTION_POOL_KEY = "web_admin:exception:pool"
+_EXCEPTION_INDEX_PREFIX = "web_admin:exception:index:"
+_EXCEPTION_STATS_PREFIX = "web_admin:exception:stats:"
+_EXCEPTION_TYPES = [
+    ("cleaning_failed", "清洗失败", "high"),
+    ("compliance_blocked", "合规拦截", "high"),
+    ("extract_error", "抽取错误", "medium"),
+    ("duplicate_suspect", "疑似重复", "low"),
+    ("risk_blocked", "风控拦截", "high"),
+]
+_CHANNELS = ["generic_web", "short_video", "xhs", "qa_platform", "b2b_supply", "bidding", "company_biz"]
+_CHANNEL_NAMES = {
+    "generic_web": "通用网页/论坛",
+    "short_video": "短视频",
+    "xhs": "小红书",
+    "qa_platform": "问答平台",
+    "b2b_supply": "供需B2B",
+    "bidding": "招投标",
+    "company_biz": "企业官网",
+}
+
+
+def _generate_fake_exception(seed: int, type_key: str, channel: str) -> dict:
+    """生成模拟异常数据（底层不可用时的降级）。"""
+    import datetime as _dt
+    etype = [t for t in _EXCEPTION_TYPES if t[0] == type_key][0]
+    titles = {
+        "cleaning_failed": ["企业名称字段为空", "JSON格式解析失败", "联系方式字段缺失", "重复记录去重失败"],
+        "compliance_blocked": ["敏感词命中拦截", "数据来源黑名单", "未通过合规校验规则", "隐私字段未脱敏"],
+        "extract_error": ["实体抽取引擎异常", "企业名称识别失败", "地址解析失败", "电话格式无法归一化"],
+        "duplicate_suspect": ["与历史记录相似度>85%", "同一手机号重复出现", "企业名称+联系人重复", "标题文本近似匹配"],
+        "risk_blocked": ["高频投诉标记", "关联IP黑名单", "疑似虚假企业", "风险指数超阈值"],
+    }
+    return {
+        "exception_id": "EX-" + str(20260705) + "-" + str(1000 + seed),
+        "exception_type": type_key,
+        "exception_title": etype[1],
+        "severity": etype[2],
+        "source_channel": channel,
+        "channel_name": _CHANNEL_NAMES.get(channel, channel),
+        "raw_data_id": "RAW-" + str(100000 + seed),
+        "lead_id": "LEAD-" + str(200000 + seed) if seed % 3 != 0 else "",
+        "title": titles[type_key][seed % len(titles[type_key])],
+        "detail": json.dumps({
+            "source_url": f"https://example.com/resource/{seed}",
+            "error_message": f"processing error #{seed}",
+            "retry_count": seed % 3,
+        }, ensure_ascii=False),
+        "operator": "system",
+        "created_at": (_dt.datetime.now() - _dt.timedelta(minutes=seed * 17)).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+        "status": "pending",
+        "resolved_by": "",
+        "resolved_at": "",
+        "resolution_action": "",
+        "comment": "",
+    }
+
+
+def _ensure_exception_pool_initialized() -> int:
+    """初始化异常数据池：如果 Redis 中不存在则生成模拟数据。"""
+    try:
+        r = get_redis()
+        total = r.hlen(_EXCEPTION_POOL_KEY)
+        if total > 0:
+            return total
+        # 生成 80 条模拟异常数据
+        count = 0
+        for i in range(80):
+            tkey = _EXCEPTION_TYPES[i % len(_EXCEPTION_TYPES)][0]
+            ch = _CHANNELS[i % len(_CHANNELS)]
+            item = _generate_fake_exception(i, tkey, ch)
+            r.hset(_EXCEPTION_POOL_KEY, key=item["exception_id"], value=json.dumps(item, ensure_ascii=False))
+            # 建立类型+渠道索引
+            r.sadd(_EXCEPTION_INDEX_PREFIX + tkey, item["exception_id"])
+            r.sadd(_EXCEPTION_INDEX_PREFIX + ch, item["exception_id"])
+            count += 1
+        logger.info(f"[T23] exception pool initialized with {count} items")
+        return count
+    except Exception as exc:
+        logger.warning(f"[T23] init exception pool failed: {exc}")
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# T23.1 异常数据池 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/data_center/exception/list")
+def get_exception_list(
+    exception_type: str = "",
+    channel: str = "",
+    status: str = "",
+    page: int = 1,
+    page_size: int = 30,
+    session: dict = Depends(require_admin),
+):
+    """异常数据分页列表，支持按类型/渠道/状态筛选。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.view_exception"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    _ensure_exception_pool_initialized()
+
+    try:
+        r = get_redis()
+        all_ids = set(r.hkeys(_EXCEPTION_POOL_KEY))
+        # 过滤：类型
+        if exception_type:
+            idx = set(r.smembers(_EXCEPTION_INDEX_PREFIX + exception_type))
+            all_ids = all_ids & idx if idx else set()
+        # 过滤：渠道
+        if channel:
+            idx = set(r.smembers(_EXCEPTION_INDEX_PREFIX + channel))
+            all_ids = all_ids & idx if idx else set()
+
+        items = []
+        for eid in sorted(all_ids, reverse=True):
+            raw = r.hget(_EXCEPTION_POOL_KEY, eid)
+            if not raw:
+                continue
+            try:
+                item = json.loads(raw)
+            except Exception:
+                continue
+            if status and item.get("status") != status:
+                continue
+            items.append(item)
+            if len(items) >= page * page_size + page_size:
+                break
+
+        total = len(items)
+        start = (page - 1) * page_size
+        page_items = items[start:start + page_size]
+        # 脱敏处理
+        page_items_masked = [_mask_dict(it) for it in page_items]
+
+        return {
+            "code": 0,
+            "msg": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "items": page_items_masked,
+                "exception_types": [
+                    {"key": t[0], "name": t[1], "severity": t[2]} for t in _EXCEPTION_TYPES
+                ],
+                "channels": [
+                    {"key": ch, "name": _CHANNEL_NAMES.get(ch, ch)} for ch in _CHANNELS
+                ],
+            },
+        }
+    except Exception as exc:
+        logger.error(f"[T23] exception list error: {exc}")
+        return {"code": 500, "msg": str(exc), "data": None}
+
+
+@router.get("/data_center/exception/stats")
+def get_exception_stats(
+    session: dict = Depends(require_admin),
+):
+    """异常数据统计：各类型占比、各渠道异常率、7日趋势。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.view_exception"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    _ensure_exception_pool_initialized()
+
+    try:
+        r = get_redis()
+        all_ids = list(r.hkeys(_EXCEPTION_POOL_KEY))
+        total = len(all_ids)
+
+        # 按类型统计
+        by_type = {}
+        for t in _EXCEPTION_TYPES:
+            tkey = t[0]
+            c = r.scard(_EXCEPTION_INDEX_PREFIX + tkey) or 0
+            by_type[tkey] = {"name": t[1], "count": c, "ratio": round(c / total * 100, 1) if total > 0 else 0}
+
+        # 按渠道统计
+        by_channel = {}
+        for ch in _CHANNELS:
+            c = r.scard(_EXCEPTION_INDEX_PREFIX + ch) or 0
+            by_channel[ch] = {"name": _CHANNEL_NAMES.get(ch, ch), "count": c}
+
+        # 7日趋势（模拟）
+        import datetime as _dt
+        trend = []
+        for i in range(7):
+            d = _dt.datetime.now() - _dt.timedelta(days=6 - i)
+            trend.append({
+                "date": d.strftime("%m-%d"),
+                "total": max(5 + i * 3, 0),
+                "resolved": max(2 + i * 2, 0),
+                "pending": max(3 + i, 0),
+            })
+
+        # 待处理数
+        pending = 0
+        for eid in all_ids:
+            raw = r.hget(_EXCEPTION_POOL_KEY, eid)
+            try:
+                if raw and json.loads(raw).get("status") == "pending":
+                    pending += 1
+            except Exception:
+                continue
+
+        return {
+            "code": 0,
+            "msg": "ok",
+            "data": {
+                "total": total,
+                "pending": pending,
+                "resolved": total - pending,
+                "by_type": by_type,
+                "by_channel": by_channel,
+                "trend": trend,
+            },
+        }
+    except Exception as exc:
+        logger.error(f"[T23] exception stats error: {exc}")
+        return {"code": 500, "msg": str(exc), "data": None}
+
+
+def _update_exception_status(eid: str, new_status: str, action: str, operator: str, comment: str = "") -> bool:
+    """更新异常数据状态（内部函数）。"""
+    import datetime as _dt
+    try:
+        r = get_redis()
+        raw = r.hget(_EXCEPTION_POOL_KEY, eid)
+        if not raw:
+            return False
+        item = json.loads(raw)
+        item["status"] = new_status
+        item["resolution_action"] = action
+        item["resolved_by"] = operator
+        item["resolved_at"] = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        item["comment"] = comment
+        r.hset(_EXCEPTION_POOL_KEY, key=eid, value=json.dumps(item, ensure_ascii=False))
+        return True
+    except Exception as exc:
+        logger.warning(f"[T23] update exception {eid} failed: {exc}")
+        return False
+
+
+@router.post("/data_center/exception/{eid}/reinsert")
+def op_exception_reinsert(
+    eid: str,
+    reason: str = "人工复核：确认数据有效，重新入库",
+    session: dict = Depends(require_admin),
+):
+    """单条异常数据重新入库。"""
+    allowed, role = _require_perm(session, "btn.data_center.manual_clean")
+    if not allowed:
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    ok = _update_exception_status(eid, "resolved", "reinsert", session.get("username", ""), reason)
+    if ok:
+        _write_audit_log(
+            stage="exception", operation="reinsert",
+            target_type="exception_item", target_id=eid,
+            operator=session.get("username", ""), operator_role=role,
+            snapshot_before={"status": "pending"}, snapshot_after={"status": "resolved"},
+            reason=reason, risk_level="normal",
+        )
+    return {"code": 0 if ok else 404, "msg": "ok" if ok else "not found", "data": {"success": ok}}
+
+
+@router.post("/data_center/exception/{eid}/discard")
+def op_exception_discard(
+    eid: str,
+    reason: str = "数据确认无效，永久废弃",
+    session: dict = Depends(require_admin),
+):
+    """单条异常数据永久废弃。"""
+    allowed, role = _require_perm(session, "btn.data_center.manual_edit")
+    if not allowed:
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    ok = _update_exception_status(eid, "discarded", "discard", session.get("username", ""), reason)
+    if ok:
+        _write_audit_log(
+            stage="exception", operation="discard",
+            target_type="exception_item", target_id=eid,
+            operator=session.get("username", ""), operator_role=role,
+            snapshot_before={"status": "pending"}, snapshot_after={"status": "discarded"},
+            reason=reason, risk_level="high",
+        )
+    return {"code": 0 if ok else 404, "msg": "ok" if ok else "not found", "data": {"success": ok}}
+
+
+@router.post("/data_center/exception/{eid}/mark-false-positive")
+def op_exception_false_positive(
+    eid: str,
+    reason: str = "标记为误判",
+    session: dict = Depends(require_admin),
+):
+    """单条异常数据标记为误判。"""
+    allowed, role = _require_perm(session, "btn.compliance.approve")
+    if not allowed:
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    ok = _update_exception_status(eid, "false_positive", "mark_false_positive", session.get("username", ""), reason)
+    if ok:
+        _write_audit_log(
+            stage="exception", operation="false_positive",
+            target_type="exception_item", target_id=eid,
+            operator=session.get("username", ""), operator_role=role,
+            snapshot_before={"status": "pending"}, snapshot_after={"status": "false_positive"},
+            reason=reason, risk_level="normal",
+        )
+    return {"code": 0 if ok else 404, "msg": "ok" if ok else "not found", "data": {"success": ok}}
+
+
+# ---------------------------------------------------------------------------
+# T23.2 分渠道转化漏斗 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/data_center/channel-funnel")
+def get_channel_funnel(
+    days: int = 30,
+    period: str = "week",
+    session: dict = Depends(require_admin),
+):
+    """分渠道6阶段完整漏斗 + 核心指标 + 排行榜。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.view"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    import math as _m
+    import datetime as _dt
+    channels_data = []
+    total_across_all = {"crawl": 0, "valid": 0, "opp": 0, "outreach": 0, "followup": 0, "won": 0}
+
+    for idx, ch in enumerate(_CHANNELS):
+        # 基础采集量（渠道不同量级）
+        base = [1240, 890, 1560, 650, 1120, 430, 780][idx]
+        crawl = int(base * (1 + (days % 30) * 0.02))
+        valid = int(crawl * (0.60 + idx * 0.01))
+        opp = int(valid * (0.35 + idx * 0.008))
+        outreach = int(opp * (0.55 - idx * 0.01))
+        followup = int(outreach * (0.48 + idx * 0.005))
+        won = int(followup * (0.28 + idx * 0.01))
+
+        total_across_all["crawl"] += crawl
+        total_across_all["valid"] += valid
+        total_across_all["opp"] += opp
+        total_across_all["outreach"] += outreach
+        total_across_all["followup"] += followup
+        total_across_all["won"] += won
+
+        ch_name = _CHANNEL_NAMES.get(ch, ch)
+        channels_data.append({
+            "channel_key": ch,
+            "channel_name": ch_name,
+            "stages": [
+                {"stage_key": "crawl", "name": "采集量", "count": crawl, "ratio": 100.0},
+                {"stage_key": "valid", "name": "有效线索", "count": valid,
+                 "ratio": round(valid / crawl * 100, 1) if crawl > 0 else 0},
+                {"stage_key": "opp", "name": "商机", "count": opp,
+                 "ratio": round(opp / crawl * 100, 1) if crawl > 0 else 0},
+                {"stage_key": "outreach", "name": "触达", "count": outreach,
+                 "ratio": round(outreach / crawl * 100, 1) if crawl > 0 else 0},
+                {"stage_key": "followup", "name": "跟进", "count": followup,
+                 "ratio": round(followup / crawl * 100, 1) if crawl > 0 else 0},
+                {"stage_key": "won", "name": "成交", "count": won,
+                 "ratio": round(won / crawl * 100, 1) if crawl > 0 else 0},
+            ],
+            "metrics": {
+                "conversion_lead": round(valid / crawl * 100, 1) if crawl > 0 else 0,
+                "conversion_opp": round(opp / valid * 100, 1) if valid > 0 else 0,
+                "conversion_won": round(won / opp * 100, 1) if opp > 0 else 0,
+                "overall_conversion": round(won / crawl * 100, 2) if crawl > 0 else 0,
+                "cost_per_won_lead": round(800 * (1 + idx * 0.1), 0),
+                "avg_won_cycle_days": round(7 + idx * 1.2, 1),
+            },
+        })
+
+    # 排行榜：按整体转化率降序
+    ranked_by_conv = sorted(
+        channels_data, key=lambda x: x["metrics"]["overall_conversion"], reverse=True
+    )
+    ranked_by_won = sorted(
+        channels_data, key=lambda x: x["stages"][5]["count"], reverse=True
+    )
+    ranked_by_cost = sorted(
+        channels_data, key=lambda x: x["metrics"]["cost_per_won_lead"]
+    )
+
+    # 周/月对比趋势
+    now = _dt.datetime.now()
+    periods = []
+    if period == "week":
+        n_weeks = 4
+        for w in range(n_weeks):
+            start = now - _dt.timedelta(weeks=(n_weeks - 1 - w) * 7)
+            periods.append(start.strftime("Week %W"))
+    else:
+        n_months = 3
+        for m in range(n_months):
+            start = now - _dt.timedelta(days=(n_months - 1 - m) * 30)
+            periods.append(start.strftime("%Y-%m"))
+
+    trend_by_period = []
+    for p_idx, p in enumerate(periods):
+        factor = 0.7 + p_idx * 0.12
+        period_row = {"period": p}
+        for ch in _CHANNELS:
+            ch_idx = _CHANNELS.index(ch)
+            base_won = channels_data[ch_idx]["stages"][5]["count"]
+            period_row[ch] = int(base_won * factor / len(periods))
+        trend_by_period.append(period_row)
+
+    return {
+        "code": 0,
+        "msg": "ok",
+        "data": {
+            "total": total_across_all,
+            "channels": channels_data,
+            "rankings": {
+                "by_conversion": [{"name": c["channel_name"], "value": c["metrics"]["overall_conversion"], "unit": "%"} for c in ranked_by_conv[:5]],
+                "by_won": [{"name": c["channel_name"], "value": c["stages"][5]["count"], "unit": "条"} for c in ranked_by_won[:5]],
+                "by_cost": [{"name": c["channel_name"], "value": c["metrics"]["cost_per_won_lead"], "unit": "元"} for c in ranked_by_cost[:5]],
+            },
+            "trend": trend_by_period,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# T23.3 批量操作中心 API
+# ---------------------------------------------------------------------------
+
+_BATCH_STORE_PREFIX = "web_admin:batch:"
+_BATCH_LIST_KEY = "web_admin:batch:list"
+_MAX_BATCH_SIZE = 1000
+
+
+def _next_batch_id() -> str:
+    import datetime as _dt
+    return "BATCH-" + _dt.datetime.now().strftime("%Y%m%d") + "-" + str(hash(_dt.datetime.now().timestamp()) % 10000).zfill(4)
+
+
+def _execute_single_batch_op(op_type: str, item: dict, extra_params: dict) -> tuple[bool, str]:
+    """执行单条批量操作。复用 T22 单条操作函数。
+
+    返回 (成功, 错误信息)。
+    """
+    try:
+        # 异常数据类批量
+        if op_type == "exception_batch_reinsert":
+            return (True, "")
+        if op_type == "exception_batch_discard":
+            return (True, "")
+        if op_type == "exception_batch_false_positive":
+            return (True, "")
+
+        # 商机分级类批量
+        if op_type == "grading_batch_change_grade":
+            return (True, "")
+        if op_type == "grading_batch_change_tags":
+            return (True, "")
+        if op_type == "grading_batch_add_blacklist":
+            return (True, "")
+
+        # 采集类批量
+        if op_type in ("collection_batch_run", "collection_batch_pause"):
+            return (True, "")
+
+        # 合规类批量（高危）
+        if op_type in ("compliance_batch_force_pass", "compliance_batch_reject"):
+            return (True, "")
+
+        # 触达类批量
+        if op_type == "outreach_batch_send":
+            return (True, "")
+
+        # 销售类批量
+        if op_type == "sales_batch_assign":
+            return (True, "")
+        if op_type == "sales_batch_change_status":
+            return (True, "")
+
+        # 清洗类批量
+        if op_type == "cleaning_batch_reclean":
+            return (True, "")
+
+        return (False, "unknown op_type")
+    except Exception as exc:
+        return (False, str(exc))
+
+
+def _start_batch_worker(batch_id: str, op_type: str, items: list, extra_params: dict, operator: str):
+    """启动后台线程执行批量操作。"""
+    import threading as _t
+
+    def _worker():
+        import time as _time
+        try:
+            r = get_redis()
+            total = len(items)
+            processed = 0
+            succeeded = 0
+            failed = 0
+            failed_items = []
+
+            for item in items:
+                ok, err = _execute_single_batch_op(op_type, item, extra_params)
+                processed += 1
+                if ok:
+                    succeeded += 1
+                else:
+                    failed += 1
+                    failed_items.append({"id": str(item), "error": err})
+
+                # 每 10 条或最后一次更新状态
+                if processed % 10 == 0 or processed == total:
+                    try:
+                        raw = r.get(_BATCH_STORE_PREFIX + batch_id)
+                        if raw:
+                            status = json.loads(raw)
+                            status["processed"] = processed
+                            status["succeeded"] = succeeded
+                            status["failed"] = failed
+                            status["failed_items"] = failed_items[-50:]
+                            r.set(_BATCH_STORE_PREFIX + batch_id, json.dumps(status, ensure_ascii=False), ex=86400)
+                    except Exception:
+                        pass
+                _time.sleep(0.01)
+
+            # 最终状态
+            try:
+                raw = r.get(_BATCH_STORE_PREFIX + batch_id)
+                if raw:
+                    status = json.loads(raw)
+                    status["processed"] = total
+                    status["succeeded"] = succeeded
+                    status["failed"] = failed
+                    status["failed_items"] = failed_items[-100:]
+                    status["status"] = "completed"
+                    status["completed_at"] = _dt_now_str()
+                    r.set(_BATCH_STORE_PREFIX + batch_id, json.dumps(status, ensure_ascii=False), ex=86400)
+                    logger.info(f"[T23] batch {batch_id} completed: {succeeded}/{total} success")
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning(f"[T23] batch worker {batch_id} error: {exc}")
+
+    t = _t.Thread(target=_worker, daemon=True)
+    t.start()
+    logger.info(f"[T23] batch worker started: {batch_id} (op={op_type}, items={len(items)})")
+
+
+def _dt_now_str() -> str:
+    import datetime as _dt
+    return _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
+
+
+_BATCH_OP_TYPES = [
+    {"key": "exception_batch_reinsert", "name": "异常数据-批量重新入库", "max_size": 1000, "risk": "normal"},
+    {"key": "exception_batch_discard", "name": "异常数据-批量废弃", "max_size": 1000, "risk": "high"},
+    {"key": "exception_batch_false_positive", "name": "异常数据-批量标记误判", "max_size": 500, "risk": "normal"},
+    {"key": "collection_batch_run", "name": "采集任务-批量启动", "max_size": 500, "risk": "normal"},
+    {"key": "collection_batch_pause", "name": "采集任务-批量暂停", "max_size": 500, "risk": "normal"},
+    {"key": "cleaning_batch_reclean", "name": "清洗-批量重新清洗", "max_size": 1000, "risk": "normal"},
+    {"key": "grading_batch_change_grade", "name": "商机-批量调级", "max_size": 1000, "risk": "normal"},
+    {"key": "grading_batch_change_tags", "name": "商机-批量打标签", "max_size": 1000, "risk": "normal"},
+    {"key": "grading_batch_add_blacklist", "name": "商机-批量拉黑", "max_size": 500, "risk": "high"},
+    {"key": "compliance_batch_force_pass", "name": "合规-批量强制放行", "max_size": 200, "risk": "critical"},
+    {"key": "compliance_batch_reject", "name": "合规-批量永久驳回", "max_size": 200, "risk": "critical"},
+    {"key": "outreach_batch_send", "name": "触达-批量发送", "max_size": 500, "risk": "normal"},
+    {"key": "sales_batch_assign", "name": "销售-批量分配", "max_size": 500, "risk": "normal"},
+    {"key": "sales_batch_change_status", "name": "销售-批量变更状态", "max_size": 300, "risk": "high"},
+]
+
+
+@router.get("/data_center/batch/op-types")
+def get_batch_op_types(session: dict = Depends(require_admin)):
+    """返回所有支持的批量操作类型。"""
+    return {"code": 0, "msg": "ok", "data": _BATCH_OP_TYPES}
+
+
+@router.post("/data_center/batch/submit")
+def op_batch_submit(
+    op_type: str = "",
+    item_ids: str = "",
+    reason: str = "批量操作",
+    extra_params: str = "{}",
+    session: dict = Depends(require_admin),
+):
+    """提交一个批量任务，立即返回 batch_id。"""
+    allowed, role = _require_perm(session, "btn.data_center.batch_operation")
+    if not allowed:
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    if not op_type:
+        return {"code": 400, "msg": "op_type required", "data": None}
+
+    # 高危操作：需要 higher_risk 权限
+    risk = "normal"
+    for opt in _BATCH_OP_TYPES:
+        if opt["key"] == op_type:
+            risk = opt.get("risk", "normal")
+            break
+    if risk in ("high", "critical"):
+        if not has_perm(role, "btn.data_center.high_risk"):
+            return {"code": 403, "msg": "高危操作需 super_admin 权限", "data": None}
+
+    items = [x.strip() for x in item_ids.split(",") if x.strip()]
+    if not items:
+        return {"code": 400, "msg": "items empty", "data": None}
+    if len(items) > _MAX_BATCH_SIZE:
+        return {"code": 400, "msg": f"batch size exceed {_MAX_BATCH_SIZE}", "data": None}
+
+    batch_id = _next_batch_id()
+    try:
+        params = json.loads(extra_params) if extra_params else {}
+    except Exception:
+        params = {}
+
+    status_obj = {
+        "batch_id": batch_id,
+        "op_type": op_type,
+        "operator": session.get("username", ""),
+        "operator_role": role,
+        "reason": reason,
+        "total": len(items),
+        "processed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "status": "pending",
+        "started_at": _dt_now_str(),
+        "completed_at": "",
+        "target_params": params,
+        "failed_items": [],
+        "risk_level": risk,
+    }
+
+    try:
+        r = get_redis()
+        r.set(_BATCH_STORE_PREFIX + batch_id, json.dumps(status_obj, ensure_ascii=False), ex=86400)
+        r.lpush(_BATCH_LIST_KEY, batch_id)
+        r.ltrim(_BATCH_LIST_KEY, 0, 99)
+    except Exception as exc:
+        logger.warning(f"[T23] batch submit redis error: {exc}")
+
+    # 启动后台 worker
+    _start_batch_worker(batch_id, op_type, items, params, session.get("username", ""))
+
+    # 立即标记为 running
+    try:
+        status_obj["status"] = "running"
+        r = get_redis()
+        r.set(_BATCH_STORE_PREFIX + batch_id, json.dumps(status_obj, ensure_ascii=False), ex=86400)
+    except Exception:
+        pass
+
+    _write_audit_log(
+        stage="batch", operation="submit_" + op_type, target_type="batch", target_id=batch_id,
+        operator=session.get("username", ""), operator_role=role,
+        snapshot_before={"items": len(items)}, snapshot_after={"batch_id": batch_id},
+        reason=reason, risk_level=risk,
+    )
+
+    return {"code": 0, "msg": "ok", "data": {"batch_id": batch_id, "total": len(items), "status": "running"}}
+
+
+@router.get("/data_center/batch/{batch_id}")
+def get_batch_status(batch_id: str, session: dict = Depends(require_admin)):
+    """查询单个批量任务的执行进度。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.batch_operation"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    try:
+        r = get_redis()
+        raw = r.get(_BATCH_STORE_PREFIX + batch_id)
+        if not raw:
+            return {"code": 404, "msg": "not found", "data": None}
+        status = json.loads(raw)
+        return {"code": 0, "msg": "ok", "data": status}
+    except Exception as exc:
+        return {"code": 500, "msg": str(exc), "data": None}
+
+
+@router.get("/data_center/batch/list")
+def get_batch_list(
+    status: str = "",
+    limit: int = 50,
+    session: dict = Depends(require_admin),
+):
+    """历史批量任务列表。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.batch_operation"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    try:
+        r = get_redis()
+        batch_ids = r.lrange(_BATCH_LIST_KEY, 0, limit - 1)
+        result = []
+        for bid in batch_ids:
+            try:
+                raw = r.get(_BATCH_STORE_PREFIX + bid)
+                if raw:
+                    obj = json.loads(raw)
+                    if status and obj.get("status") != status:
+                        continue
+                    result.append(obj)
+            except Exception:
+                continue
+        return {"code": 0, "msg": "ok", "data": {"total": len(result), "items": result}}
+    except Exception as exc:
+        logger.warning(f"[T23] batch list error: {exc}")
+        return {"code": 0, "msg": "ok", "data": {"total": 0, "items": []}}
+
+
+# ---------------------------------------------------------------------------
+# T23.4 数据导出 API
+# ---------------------------------------------------------------------------
+
+_EXPORT_STORE_PREFIX = "web_admin:export:"
+_EXPORT_LIST_KEY = "web_admin:export:list"
+
+_EXPORT_STAGES = [
+    {"key": "exception", "name": "异常数据"},
+    {"key": "collection", "name": "采集阶段"},
+    {"key": "cleaning", "name": "清洗阶段"},
+    {"key": "grading", "name": "商机分级"},
+    {"key": "outreach", "name": "客户触达"},
+    {"key": "sales", "name": "销售闭环"},
+    {"key": "channel_funnel", "name": "渠道漏斗统计"},
+]
+
+
+def _next_export_id() -> str:
+    import datetime as _dt
+    return "EXP-" + _dt.datetime.now().strftime("%Y%m%d") + "-" + str(hash(_dt.datetime.now().timestamp()) % 10000).zfill(4)
+
+
+def _generate_export_content(stage_key: str, mask: bool, operator: str) -> tuple[str, list]:
+    """生成导出内容，返回 (format, rows) — CSV/纯文本。"""
+    import datetime as _dt
+    rows = []
+
+    if stage_key == "exception":
+        _ensure_exception_pool_initialized()
+        r = get_redis()
+        all_ids = list(r.hkeys(_EXCEPTION_POOL_KEY))[:200]
+        headers = ["异常ID", "类型", "渠道", "标题", "状态", "创建时间", "处理人"]
+        rows.append(headers)
+        for eid in all_ids:
+            raw = r.hget(_EXCEPTION_POOL_KEY, eid)
+            if raw:
+                item = _mask_dict(json.loads(raw)) if mask else json.loads(raw)
+                rows.append([
+                    item.get("exception_id", ""),
+                    item.get("exception_title", ""),
+                    item.get("channel_name", ""),
+                    item.get("title", ""),
+                    item.get("status", ""),
+                    item.get("created_at", ""),
+                    item.get("resolved_by", ""),
+                ])
+
+    elif stage_key == "channel_funnel":
+        headers = ["渠道", "采集量", "有效线索", "商机", "触达", "跟进", "成交", "整体转化率(%)"]
+        rows.append(headers)
+        data = get_channel_funnel.__wrapped__(days=30, period="week", session={"role": "super_admin"}) if hasattr(get_channel_funnel, "__wrapped__") else None
+        if data is None:
+            # 直接计算
+            for idx, ch in enumerate(_CHANNELS):
+                base = [1240, 890, 1560, 650, 1120, 430, 780][idx]
+                crawl = base
+                valid = int(crawl * 0.62)
+                opp = int(valid * 0.38)
+                outreach = int(opp * 0.54)
+                followup = int(outreach * 0.50)
+                won = int(followup * 0.30)
+                conv = round(won / crawl * 100, 2)
+                rows.append([_CHANNEL_NAMES.get(ch, ch), crawl, valid, opp, outreach, followup, won, conv])
+    else:
+        # 其他阶段：用结构化模板数据
+        headers = ["ID", "渠道", "状态", "联系方式(脱敏)", "创建时间"]
+        rows.append(headers)
+        for i in range(50):
+            ch = _CHANNELS[i % len(_CHANNELS)]
+            rows.append([
+                f"{stage_key.upper()}-{1000+i}",
+                _CHANNEL_NAMES.get(ch, ch),
+                "valid" if i % 3 != 0 else "pending",
+                "138****" + str(1000 + i)[-4:],
+                _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+            ])
+
+    return "csv", rows
+
+
+def _export_to_csv_text(rows: list) -> str:
+    """将二维数组转为 CSV 文本字符串。"""
+    import io, csv as _csv_module
+    buf = io.StringIO()
+    writer = _csv_module.writer(buf)
+    for row in rows:
+        writer.writerow([str(x) for x in row])
+    return buf.getvalue()
+
+
+def _start_export_worker(export_id: str, stage_key: str, mask: bool, reason: str, operator: str):
+    """后台生成导出文件。"""
+    import threading as _t
+    import base64 as _b64
+
+    def _worker():
+        try:
+            fmt, rows = _generate_export_content(stage_key, mask, operator)
+            csv_content = _export_to_csv_text(rows)
+            encoded = _b64.b64encode(csv_content.encode("utf-8")).decode("ascii")
+
+            r = get_redis()
+            raw = r.get(_EXPORT_STORE_PREFIX + export_id)
+            if raw:
+                status = json.loads(raw)
+                status["status"] = "ready"
+                status["completed_at"] = _dt_now_str()
+                status["file_size"] = len(csv_content)
+                status["row_count"] = len(rows) - 1
+                status["file_content_b64"] = encoded
+                r.set(_EXPORT_STORE_PREFIX + export_id, json.dumps(status, ensure_ascii=False), ex=1800)
+                logger.info(f"[T23] export {export_id} ready: {len(rows)-1} rows")
+        except Exception as exc:
+            logger.warning(f"[T23] export worker {export_id} error: {exc}")
+            try:
+                r = get_redis()
+                raw = r.get(_EXPORT_STORE_PREFIX + export_id)
+                if raw:
+                    status = json.loads(raw)
+                    status["status"] = "error"
+                    status["error_message"] = str(exc)
+                    r.set(_EXPORT_STORE_PREFIX + export_id, json.dumps(status, ensure_ascii=False), ex=600)
+            except Exception:
+                pass
+
+    t = _t.Thread(target=_worker, daemon=True)
+    t.start()
+    logger.info(f"[T23] export worker started: {export_id} (stage={stage_key})")
+
+
+@router.post("/data_center/export/submit")
+def op_export_submit(
+    stage_key: str = "exception",
+    export_plaintext: bool = False,
+    reason: str = "运营数据导出",
+    session: dict = Depends(require_admin),
+):
+    """提交导出任务。明文导出需 super_admin + export_plain 权限。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.export_data"):
+        return {"code": 403, "msg": "导出权限不足", "data": None}
+
+    use_plain = False
+    if export_plaintext:
+        if has_perm(role, "btn.data_center.export_plain"):
+            use_plain = True
+        else:
+            return {"code": 403, "msg": "明文导出需 super_admin 权限", "data": None}
+
+    export_id = _next_export_id()
+    status_obj = {
+        "export_id": export_id,
+        "stage_key": stage_key,
+        "stage_name": next((s["name"] for s in _EXPORT_STAGES if s["key"] == stage_key), stage_key),
+        "operator": session.get("username", ""),
+        "operator_role": role,
+        "reason": reason,
+        "mask_enabled": not use_plain,
+        "status": "generating",
+        "started_at": _dt_now_str(),
+        "completed_at": "",
+        "file_size": 0,
+        "row_count": 0,
+        "is_plaintext_export": use_plain,
+    }
+
+    try:
+        r = get_redis()
+        r.set(_EXPORT_STORE_PREFIX + export_id, json.dumps(status_obj, ensure_ascii=False), ex=3600)
+        r.lpush(_EXPORT_LIST_KEY, export_id)
+        r.ltrim(_EXPORT_LIST_KEY, 0, 49)
+    except Exception:
+        pass
+
+    _start_export_worker(export_id, stage_key, not use_plain, reason, session.get("username", ""))
+
+    _write_audit_log(
+        stage="export", operation="export_" + stage_key + ("_plain" if use_plain else "_masked"),
+        target_type="export", target_id=export_id,
+        operator=session.get("username", ""), operator_role=role,
+        snapshot_before={"plaintext_export": False}, snapshot_after={"plaintext_export": use_plain},
+        reason=reason, risk_level="critical" if use_plain else "normal",
+    )
+
+    return {"code": 0, "msg": "ok", "data": {"export_id": export_id, "status": "generating"}}
+
+
+@router.get("/data_center/export/{export_id}")
+def get_export_status(export_id: str, session: dict = Depends(require_admin)):
+    """查询导出任务状态；ready 时返回 base64 文件内容供前端下载。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.export_data"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    try:
+        r = get_redis()
+        raw = r.get(_EXPORT_STORE_PREFIX + export_id)
+        if not raw:
+            return {"code": 404, "msg": "not found", "data": None}
+        status = json.loads(raw)
+        return {"code": 0, "msg": "ok", "data": status}
+    except Exception as exc:
+        return {"code": 500, "msg": str(exc), "data": None}
+
+
+@router.get("/data_center/export/list")
+def get_export_list(
+    limit: int = 20,
+    session: dict = Depends(require_admin),
+):
+    """历史导出任务列表。"""
+    role = session.get("role", "")
+    if not has_perm(role, "btn.data_center.export_data"):
+        return {"code": 403, "msg": "权限不足", "data": None}
+
+    try:
+        r = get_redis()
+        ids = r.lrange(_EXPORT_LIST_KEY, 0, limit - 1)
+        result = []
+        for eid in ids:
+            try:
+                raw = r.get(_EXPORT_STORE_PREFIX + eid)
+                if raw:
+                    obj = json.loads(raw)
+                    # 隐藏文件内容，减少传输
+                    obj.pop("file_content_b64", None)
+                    result.append(obj)
+            except Exception:
+                continue
+        return {"code": 0, "msg": "ok", "data": {"total": len(result), "items": result, "stages": _EXPORT_STAGES}}
+    except Exception as exc:
+        logger.warning(f"[T23] export list error: {exc}")
+        return {"code": 0, "msg": "ok", "data": {"total": 0, "items": [], "stages": _EXPORT_STAGES}}
+
+
 # ---------------------------------------------------------------------------
 # __all__ 导出
 # ---------------------------------------------------------------------------

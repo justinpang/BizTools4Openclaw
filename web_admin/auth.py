@@ -77,6 +77,10 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.data_center.manual_edit",
         "btn.data_center.manual_clean",
         "btn.data_center.high_risk",
+        "btn.data_center.view_exception",
+        "btn.data_center.batch_operation",
+        "btn.data_center.export_data",
+        "btn.data_center.export_plain",
     },
     ROLE_OPS: {
         "btn.dashboard.view",
@@ -97,6 +101,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.data_center.view",
         "btn.data_center.manual_edit",
         "btn.data_center.manual_clean",
+        "btn.data_center.view_exception",
+        "btn.data_center.batch_operation",
+        "btn.data_center.export_data",
     },
     ROLE_SALES: {
         "btn.dashboard.view",
@@ -107,6 +114,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.compliance.notification",
         "btn.data_center.view",
         "btn.data_center.manual_edit",
+        "btn.data_center.view_exception",
+        "btn.data_center.batch_operation",
+        "btn.data_center.export_data",
     },
     ROLE_COMPLIANCE: {
         "btn.dashboard.view",
@@ -121,6 +131,9 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "btn.data_center.view",
         "btn.data_center.manual_edit",
         "btn.data_center.high_risk",
+        "btn.data_center.view_exception",
+        "btn.data_center.batch_operation",
+        "btn.data_center.export_data",
     },
 }
 

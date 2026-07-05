@@ -344,6 +344,14 @@
    * T22.0) 操作定义 & 渲染工具
    * ---------------------------------------------------------------------- */
   var STAGE_OPS = {
+    exception: [
+      { key: "reinsert", title: "单条重新入库", method: "POST", url: "/api/admin/data_center/exception/EDIT-ITEM-ID/reinsert",
+        dynamic_item_id: true, fields: [] },
+      { key: "discard", title: "[高危]废弃单条", risk: "high", method: "POST", url: "/api/admin/data_center/exception/EDIT-ITEM-ID/discard",
+        dynamic_item_id: true, fields: [] },
+      { key: "false_positive", title: "标记为误判", method: "POST", url: "/api/admin/data_center/exception/EDIT-ITEM-ID/mark-false-positive",
+        dynamic_item_id: true, fields: [] }
+    ],
     collection: [
       { key: "task_speed", title: "调整采集速度", method: "POST", url: "/api/admin/data_center/manual/collection/task-speed",
         fields: [{ name: "job_id", label: "任务ID", placeholder: "task-xxxx", required: true },
@@ -693,6 +701,472 @@
   /* ---------------------------------------------------------------------- *
    * 10) Apply permissions + export
    * ---------------------------------------------------------------------- */
+  /* ========================================================================= *
+   * T23: 异常数据池 + 分渠道漏斗 + 批量操作 + 数据导出
+   * ========================================================================= */
+
+  /* ---------- 1) Exception Pool ---------- */
+  admin.loadExceptionStats = function () {
+    fetch("/api/admin/data_center/exception/stats")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.data) {
+          var d = data.data;
+          var t = document.getElementById("exception-total");
+          var p = document.getElementById("exception-pending");
+          var res = document.getElementById("exception-resolved");
+          var tr = document.getElementById("exception-trend");
+          if (t) t.textContent = d.total;
+          if (p) p.textContent = d.pending;
+          if (res) res.textContent = d.resolved;
+          if (tr) {
+            var trLabel = "Pending";
+            if (d.trend && d.trend.length) {
+              trLabel = d.trend.map(function (x) { return x.date + ":" + x.pending; }).join(" | ");
+            }
+            tr.textContent = trLabel.substring(0, 30);
+          }
+          // 类型分布
+          var dist = document.getElementById("exception-type-dist");
+          if (dist && d.by_type) {
+            var html = "";
+            var maxVal = 1;
+            var keys = Object.keys(d.by_type);
+            keys.forEach(function (k) { if (d.by_type[k].count > maxVal) maxVal = d.by_type[k].count; });
+            keys.forEach(function (k) {
+              var item = d.by_type[k];
+              var pct = Math.round(item.count / maxVal * 100);
+              html += '<div class="type-bar-row" style="margin-bottom:8px;">' +
+                       '  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">' +
+                       '    <span>' + item.name + '</span>' +
+                       '    <span style="color:#6b7a90;">' + item.count + ' (' + item.ratio + '%)</span>' +
+                       '  </div>' +
+                       '  <div class="progress-bar-container" style="height:10px;">' +
+                       '    <div class="progress-bar-fill" style="width:' + pct + '%;background:#4a90e2;"></div>' +
+                       '  </div>' +
+                       '</div>';
+            });
+            dist.innerHTML = html;
+          }
+          // 填充筛选下拉
+          var ftype = document.getElementById("exception-filter-type");
+          if (ftype && d.by_type) {
+            keys.forEach(function (k) {
+              var opt = document.createElement("option");
+              opt.value = k;
+              opt.textContent = d.by_type[k].name;
+              ftype.appendChild(opt);
+            });
+          }
+          var fchan = document.getElementById("exception-filter-channel");
+          if (fchan && d.by_channel) {
+            Object.keys(d.by_channel).forEach(function (ch) {
+              var opt = document.createElement("option");
+              opt.value = ch;
+              opt.textContent = d.by_channel[ch].name;
+              fchan.appendChild(opt);
+            });
+          }
+        }
+      }).catch(function (e) { console.error("exception stats error", e); });
+  };
+
+  admin.loadExceptionList = function (page) {
+    if (!page) page = 1;
+    var ft = document.getElementById("exception-filter-type") ? document.getElementById("exception-filter-type").value : "";
+    var fc = document.getElementById("exception-filter-channel") ? document.getElementById("exception-filter-channel").value : "";
+    var fs = document.getElementById("exception-filter-status") ? document.getElementById("exception-filter-status").value : "";
+    var url = "/api/admin/data_center/exception/list?page=" + page + "&page_size=20" +
+              (ft ? "&exception_type=" + encodeURIComponent(ft) : "") +
+              (fc ? "&channel=" + encodeURIComponent(fc) : "") +
+              (fs ? "&status=" + encodeURIComponent(fs) : "");
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var tbody = document.getElementById("exception-tbody");
+        if (!tbody) return;
+        if (!data.data || !data.data.items || !data.data.items.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">No items found</td></tr>';
+          return;
+        }
+        var rowsHtml = "";
+        data.data.items.forEach(function (item) {
+          var statusColor = "pending" === item.status ? "#f5a623" :
+                             "resolved" === item.status ? "#28a745" :
+                             "discarded" === item.status ? "#dc3545" :
+                             "false_positive" === item.status ? "#6b7a90" : "#2c3e50";
+          rowsHtml += '<tr data-item-id="' + item.exception_id + '">' +
+            '<td>' + item.exception_id + '</td>' +
+            '<td><span class="status-tag" style="background:#f0f3f7;color:#2c3e50;padding:2px 8px;border-radius:3px;font-size:11px;">' + (item.exception_type || "") + '</span></td>' +
+            '<td>' + (item.source_channel || "") + '</td>' +
+            '<td>' + (item.title || "") + '</td>' +
+            '<td style="color:' + statusColor + ';font-weight:500;">' + item.status + '</td>' +
+            '<td>' + (item.created_at || "") + '</td>' +
+            '<td data-stage="exception" class="row-actions">' +
+              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'reinsert\',\'' + item.exception_id + '\')">Reinsert</button>' +
+              '<button class="btn btn-sm btn-danger" onclick="admin.openManualDialog(\'exception\',\'discard\',\'' + item.exception_id + '\')">Discard</button>' +
+              '<button class="btn btn-sm" onclick="admin.openManualDialog(\'exception\',\'false_positive\',\'' + item.exception_id + '\')">FP</button>' +
+            '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml;
+        // 分页
+        var pag = document.getElementById("exception-pagination");
+        if (pag && data.data.total > 20) {
+          var pages = Math.ceil(data.data.total / 20);
+          var phtml = '<div style="margin-top:12px;display:flex;gap:4px;justify-content:center;align-items:center;">';
+          for (var p = 1; p <= pages; p++) {
+            phtml += '<button class="btn btn-sm" onclick="admin.loadExceptionList(' + p + ');return false;">' + p + '</button>';
+          }
+          phtml += '</div>';
+          pag.innerHTML = phtml;
+        }
+      });
+  };
+
+  /* ---------- 2) Channel Funnel ---------- */
+  admin.loadChannelFunnel = function () {
+    var period = document.getElementById("channel-period") ? document.getElementById("channel-period").value : "week";
+    var days = document.getElementById("channel-days") ? document.getElementById("channel-days").value : "30";
+    var url = "/api/admin/data_center/channel-funnel?period=" + period + "&days=" + days;
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.data) return;
+        var d = data.data;
+        var tc = document.getElementById("total-crawl");
+        var tw = document.getElementById("total-won");
+        var tv = document.getElementById("total-conv");
+        if (tc) tc.textContent = d.total ? d.total.crawl || 0 : 0;
+        if (tw) tw.textContent = d.total ? d.total.won || 0 : 0;
+        var overall = 0;
+        if (d.total && d.total.crawl > 0 && d.total.won) overall = Math.round(d.total.won / d.total.crawl * 1000) / 10;
+        if (tv) tv.textContent = overall + "%";
+
+        var grid = document.getElementById("channel-funnel-grid");
+        if (grid && d.channels && d.channels.length) {
+          var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">';
+          d.channels.forEach(function (ch) {
+            html += '<div style="border:1px solid #e1e8ef;border-radius:8px;padding:14px;background:#fafbfc;">';
+            html += '<div style="font-weight:600;font-size:14px;margin-bottom:10px;color:#2c3e50;">' + ch.channel_name + '</div>';
+            // mini funnel bars
+            if (ch.stages && ch.stages.length) {
+              var maxCount = 0;
+              ch.stages.forEach(function (s) { if (s.count > maxCount) maxCount = s.count; });
+              ch.stages.forEach(function (s) {
+                var width = maxCount > 0 ? Math.max(Math.round(s.count / maxCount * 100), 2) : 0;
+                html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;font-size:11px;color:#5a6a7e;">' +
+                         '  <span>' + s.name + '</span>' +
+                         '  <span style="flex:1;max-width:140px;height:8px;background:#e8eef5;border-radius:3px;overflow:hidden;margin:0 8px;">' +
+                         '    <span style="display:block;height:100%;background:#4a90e2;width:' + width + '%;"></span>' +
+                         '  </span>' +
+                         '  <span style="width:70px;text-align:right;">' + s.count + ' (' + s.ratio + '%)</span>' +
+                         '</div>';
+              });
+            }
+            // 核心指标
+            if (ch.metrics) {
+              html += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #d9e1ea;font-size:11px;color:#6b7a90;">';
+              html += 'Avg Cycle: ' + (ch.metrics.avg_won_cycle_days || '-') + ' days | ';
+              html += 'Cost/Won: ' + (ch.metrics.cost_per_won_lead || '-');
+              html += '</div>';
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+          grid.innerHTML = html;
+        }
+        // 排行榜
+        var rk = document.getElementById("channel-rankings");
+        if (rk && d.rankings) {
+          var rhtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">';
+          Object.keys(d.rankings).forEach(function (rkKey) {
+            var items = d.rankings[rkKey];
+            if (!items || !items.length) return;
+            rhtml += '<div style="border:1px solid #e1e8ef;border-radius:8px;padding:12px;">';
+            var titleMap = { by_conversion: "By Conversion", by_won: "By Won Deals", by_cost: "By Cost (Asc)" };
+            rhtml += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#2c3e50;">' + (titleMap[rkKey] || rkKey) + '</div>';
+            items.forEach(function (item, idx) {
+              var color = idx === 0 ? "#d4a017" : idx === 1 ? "#b0b4b8" : idx === 2 ? "#b07a3f" : "#6b7a90";
+              rhtml += '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:' + color + ';">' +
+                        '  <span>' + (idx + 1) + '. ' + item.name + '</span>' +
+                        '  <span style="font-weight:500;">' + item.value + ' ' + (item.unit || "") + '</span>' +
+                        '</div>';
+            });
+            rhtml += '</div>';
+          });
+          rhtml += '</div>';
+          rk.innerHTML = rhtml;
+        }
+        // 趋势
+        var trendEl = document.getElementById("channel-trend");
+        if (trendEl && d.trend) {
+          var trhtml = '<table class="data-table"><thead><tr><th>Period</th>';
+          // columns from first row
+          if (d.trend.length) Object.keys(d.trend[0]).forEach(function (k) { if (k !== "period") trhtml += "<th>" + k + "</th>"; });
+          trhtml += "</tr></thead><tbody>";
+          d.trend.forEach(function (row) {
+            trhtml += "<tr><td>" + row.period + "</td>";
+            Object.keys(row).forEach(function (k) { if (k !== "period") trhtml += "<td>" + row[k] + "</td>"; });
+            trhtml += "</tr>";
+          });
+          trhtml += "</tbody></table>";
+          trendEl.innerHTML = trhtml;
+        }
+      }).catch(function (e) { console.error("channel funnel error", e); });
+  };
+
+  /* ---------- 3) Batch Operation Center ---------- */
+  admin.loadBatchOpTypes = function () {
+    fetch("/api/admin/data_center/batch/op-types")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var sel = document.getElementById("batch-op-type");
+        if (!sel || !data.data) return;
+        var items = Array.isArray(data.data) ? data.data : [];
+        // fallback: 内置常见类型
+        if (!items.length) {
+          items = [
+            { key: "exception_batch_reinsert", name: "异常数据-批量重新入库" },
+            { key: "exception_batch_discard", name: "异常数据-批量废弃" },
+            { key: "grading_batch_change_grade", name: "商机-批量调级" },
+            { key: "outreach_batch_send", name: "触达-批量发送" },
+            { key: "sales_batch_assign", name: "销售-批量分配" }
+          ];
+        }
+        sel.innerHTML = "";
+        items.forEach(function (op) {
+          var o = document.createElement("option");
+          o.value = op.key;
+          o.textContent = op.name;
+          sel.appendChild(o);
+        });
+      }).catch(function () {
+        var sel = document.getElementById("batch-op-type");
+        if (sel) sel.innerHTML = '<option value="exception_batch_reinsert">异常数据-批量重新入库</option><option value="grading_batch_change_grade">商机-批量调级</option><option value="collection_batch_run">采集-批量启动</option>';
+      });
+  };
+
+  admin.fillBatchDemo = function () {
+    var ta = document.getElementById("batch-item-ids");
+    if (ta) {
+      var demo = [];
+      for (var i = 1; i <= 30; i++) demo.push("EX-DEMO-" + i);
+      ta.value = demo.join(",");
+    }
+  };
+
+  admin.submitBatch = function () {
+    var opType = document.getElementById("batch-op-type") ? document.getElementById("batch-op-type").value : "";
+    var ids = document.getElementById("batch-item-ids") ? document.getElementById("batch-item-ids").value : "";
+    var reason = document.getElementById("batch-reason") ? document.getElementById("batch-reason").value : "batch operation";
+    if (!opType || !ids.trim()) { admin.showToast("请填写操作类型 + 条目 ID", "error"); return; }
+    var url = "/api/admin/data_center/batch/submit?op_type=" + encodeURIComponent(opType) +
+              "&item_ids=" + encodeURIComponent(ids) + "&reason=" + encodeURIComponent(reason);
+    var submitBtn = document.querySelector("#batch-progress-section");
+    if (submitBtn) submitBtn.style.display = "block";
+    admin.showToast("批量任务已提交", "info");
+    fetch(url, { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.data && data.data.batch_id) {
+          admin._currentBatchId = data.data.batch_id;
+          admin._batchPollCount = 0;
+          admin.pollBatchStatus();
+        } else {
+          admin.showToast("提交失败：" + (data.msg || "未知错误"), "error");
+        }
+      }).catch(function (e) { admin.showToast("提交异常：" + e, "error"); });
+  };
+
+  admin.pollBatchStatus = function () {
+    if (!admin._currentBatchId) return;
+    fetch("/api/admin/data_center/batch/" + admin._currentBatchId)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.data) return;
+        var st = data.data;
+        var info = document.getElementById("batch-progress-info");
+        var bar = document.getElementById("batch-progress-bar");
+        var section = document.getElementById("batch-progress-section");
+        if (section) section.style.display = "block";
+        if (info) info.innerHTML = '<div><strong>Batch ID:</strong> ' + st.batch_id + '</div>' +
+          '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">Status: ' + st.status + ' | Total: ' + st.total + ' | Succeeded: ' + st.succeeded + ' | Failed: ' + st.failed + '</div>';
+        var pct = st.total > 0 ? Math.round(st.processed / st.total * 100) : 0;
+        if (bar) bar.style.width = pct + "%";
+        if (st.status !== "completed" && admin._batchPollCount < 30) {
+          admin._batchPollCount = (admin._batchPollCount || 0) + 1;
+          setTimeout(function () { admin.pollBatchStatus(); }, 2000);
+        } else {
+          admin.loadBatchList();
+          admin.showToast("批量任务完成：" + st.batch_id, "success");
+        }
+      }).catch(function () { /* ignore */ });
+  };
+
+  admin.refreshBatchStatus = function () {
+    admin.pollBatchStatus();
+  };
+
+  admin.loadBatchList = function () {
+    fetch("/api/admin/data_center/batch/list")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var body = document.getElementById("batch-list-body");
+        if (!body) return;
+        if (!data.data || !data.data.items || !data.data.items.length) {
+          body.innerHTML = '<tr><td colspan="9" class="empty">暂无批量任务</td></tr>';
+          return;
+        }
+        var rows = "";
+        data.data.items.forEach(function (it) {
+          var statusColor = "completed" === it.status ? "#28a745" : "running" === it.status ? "#4a90e2" : "pending" === it.status ? "#f5a623" : "#6b7a90";
+          var riskColor = "critical" === it.risk_level ? "#dc3545" : "high" === it.risk_level ? "#f5a623" : "#6b7a90";
+          rows += '<tr><td>' + it.batch_id + '</td>' +
+                  '<td>' + (it.op_type || "") + '</td>' +
+                  '<td>' + (it.operator || "") + '</td>' +
+                  '<td>' + (it.total || 0) + '</td>' +
+                  '<td style="color:#28a745;">' + (it.succeeded || 0) + '</td>' +
+                  '<td style="color:#dc3545;">' + (it.failed || 0) + '</td>' +
+                  '<td style="color:' + statusColor + ';font-weight:500;">' + it.status + '</td>' +
+                  '<td style="color:' + riskColor + ';">' + (it.risk_level || "normal") + '</td>' +
+                  '<td>' + (it.started_at || "") + '</td></tr>';
+        });
+        body.innerHTML = rows;
+      }).catch(function () { /* ignore */ });
+  };
+
+  /* ---------- 4) Export Center ---------- */
+  admin.loadExportStages = function () {
+    fetch("/api/admin/data_center/export/list")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var sel = document.getElementById("export-stage");
+        if (!sel) return;
+        var stages = (data.data && data.data.stages) || [
+          { key: "exception", name: "异常数据" },
+          { key: "collection", name: "采集阶段" },
+          { key: "cleaning", name: "清洗阶段" },
+          { key: "grading", name: "商机分级" },
+          { key: "outreach", name: "客户触达" },
+          { key: "sales", name: "销售闭环" },
+          { key: "channel_funnel", name: "渠道漏斗统计" }
+        ];
+        sel.innerHTML = "";
+        stages.forEach(function (s) {
+          var o = document.createElement("option");
+          o.value = s.key;
+          o.textContent = s.name || s.key;
+          sel.appendChild(o);
+        });
+      }).catch(function () { /* ignore */ });
+  };
+
+  admin.submitExport = function () {
+    var stage = document.getElementById("export-stage") ? document.getElementById("export-stage").value : "exception";
+    var plaintext = document.getElementById("export-plaintext") ? document.getElementById("export-plaintext").checked : false;
+    var reason = document.getElementById("export-reason") ? document.getElementById("export-reason").value : "data export";
+    var url = "/api/admin/data_center/export/submit?stage_key=" + encodeURIComponent(stage) +
+              "&export_plaintext=" + (plaintext ? "true" : "false") + "&reason=" + encodeURIComponent(reason);
+    var section = document.getElementById("export-progress-section");
+    if (section) section.style.display = "block";
+    admin.showToast("导出任务已提交", "info");
+    fetch(url, { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.data && data.data.export_id) {
+          admin._currentExportId = data.data.export_id;
+          admin._exportPollCount = 0;
+          admin.pollExportStatus();
+        } else {
+          admin.showToast("导出失败：" + (data.msg || "未知错误"), "error");
+        }
+      }).catch(function (e) { admin.showToast("导出异常：" + e, "error"); });
+  };
+
+  admin.pollExportStatus = function () {
+    if (!admin._currentExportId) return;
+    fetch("/api/admin/data_center/export/" + admin._currentExportId)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.data) return;
+        var st = data.data;
+        var info = document.getElementById("export-progress-info");
+        var bar = document.getElementById("export-progress-bar");
+        var section = document.getElementById("export-progress-section");
+        if (section) section.style.display = "block";
+        if (info) {
+          var size = st.file_size ? (st.file_size / 1024).toFixed(1) + " KB" : "generating...";
+          var rows = st.row_count || 0;
+          info.innerHTML = '<div><strong>Export ID:</strong> ' + st.export_id + '</div>' +
+            '<div style="font-size:12px;color:#6b7a90;margin-top:4px;">Status: ' + st.status + ' | Rows: ' + rows + ' | Size: ' + size + '</div>';
+          if (st.status === "ready" && st.file_content_b64) {
+            var filename = "export_" + st.stage_key + "_" + st.export_id + ".csv";
+            info.innerHTML += '<div style="margin-top:8px;"><a class="btn btn-primary" onclick="admin.downloadExportFile(\'' +
+              st.export_id + '\')">📥 Download CSV</a></div>';
+          }
+        }
+        var pct = st.status === "ready" ? 100 : st.status === "generating" ? 40 : 5;
+        if (bar) bar.style.width = pct + "%";
+        if (st.status !== "ready" && admin._exportPollCount < 15) {
+          admin._exportPollCount = (admin._exportPollCount || 0) + 1;
+          setTimeout(function () { admin.pollExportStatus(); }, 2500);
+        } else if (st.status === "ready") {
+          admin.loadExportList();
+          admin.showToast("导出已就绪：" + st.export_id, "success");
+        }
+      });
+  };
+
+  admin.downloadExportFile = function (export_id) {
+    fetch("/api/admin/data_center/export/" + export_id)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.data || !data.data.file_content_b64) { admin.showToast("无法获取文件内容", "error"); return; }
+        var binaryString = atob(data.data.file_content_b64);
+        var bytes = new Uint8Array(binaryString.length);
+        for (var i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+        var blob = new Blob([bytes], { type: "text/csv;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "export_" + (data.data.stage_key || "data") + "_" + export_id + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        admin.showToast("文件下载已触发", "success");
+      }).catch(function (e) { admin.showToast("下载异常：" + e, "error"); });
+  };
+
+  admin.loadExportList = function () {
+    fetch("/api/admin/data_center/export/list")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var body = document.getElementById("export-list-body");
+        if (!body) return;
+        if (!data.data || !data.data.items || !data.data.items.length) {
+          body.innerHTML = '<tr><td colspan="9" class="empty">暂无导出记录</td></tr>';
+          return;
+        }
+        var rows = "";
+        data.data.items.forEach(function (it) {
+          var statusColor = "ready" === it.status ? "#28a745" : "generating" === it.status ? "#4a90e2" : "error" === it.status ? "#dc3545" : "#6b7a90";
+          var maskLabel = true === it.mask_enabled ? "Masked" : (it.mask_enabled ? it.mask_enabled : "-");
+          var downloadHtml = it.status === "ready" ? '<a class="btn btn-sm" onclick="admin.downloadExportFile(\'' + it.export_id + '\')">📥</a>' : "-";
+          rows += '<tr><td>' + it.export_id + '</td>' +
+                  '<td>' + (it.stage_name || it.stage_key || "") + '</td>' +
+                  '<td>' + (it.operator || "") + '</td>' +
+                  '<td>' + (it.row_count || 0) + '</td>' +
+                  '<td>' + (it.file_size ? (it.file_size / 1024).toFixed(1) + "KB" : "-") + '</td>' +
+                  '<td>' + maskLabel + '</td>' +
+                  '<td style="color:' + statusColor + ';font-weight:500;">' + it.status + '</td>' +
+                  '<td>' + (it.started_at || it.completed_at || "") + '</td>' +
+                  '<td>' + downloadHtml + '</td></tr>';
+        });
+        body.innerHTML = rows;
+      }).catch(function () { /* ignore */ });
+  };
+
   document.addEventListener("DOMContentLoaded", function () {
     applyPermissionVisibility();
     try { renderStageActionBar(); } catch (e) { /* ignore */ }

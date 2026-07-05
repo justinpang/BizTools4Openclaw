@@ -1187,6 +1187,227 @@ def data_center_opportunity_page(lead_id: str, session: dict | None = Depends(ge
     return _render_with_permission("data_center_opportunity", "btn.data_center.view", body, session)
 
 
+# ===========================================================================
+# T23: 运营配套工具页面
+# ===========================================================================
+
+@router.get("/data_center/exception", response_class=HTMLResponse)
+def data_center_exception_page(session: dict | None = Depends(get_current_admin)):
+    """异常数据池：异常集中管理，支持批量处理"""
+    body_parts = [
+        # 顶部：统计卡
+        '<section class="panel">',
+        '  <h3>[Exclamation] Exception Pool — 异常数据集中管理</h3>',
+        '  <div class="stats-grid" id="exception-stats-grid">',
+        '    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="exception-total">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="exception-pending">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">Resolved</div><div class="stat-value" id="exception-resolved">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">7-Day Trend</div><div class="stat-value" id="exception-trend">-</div></div>',
+        '  </div>',
+        '</section>',
+        # 类型分布（条形图）
+        '<section class="panel">',
+        '  <h3>[Chart] Exception Types</h3>',
+        '  <div class="type-distribution" id="exception-type-dist">',
+        '    <div class="empty-inline">Loading...</div>',
+        '  </div>',
+        '</section>',
+        # 筛选栏
+        '<section class="panel">',
+        '  <h3>[Filter] Filter Exception Items</h3>',
+        '  <div class="row" style="gap:8px;flex-wrap:wrap;">',
+        '    <label>Type <select id="exception-filter-type">',
+        '      <option value="">All Types</option>',
+        '    </select></label>',
+        '    <label>Channel <select id="exception-filter-channel">',
+        '      <option value="">All Channels</option>',
+        '    </select></label>',
+        '    <label>Status <select id="exception-filter-status">',
+        '      <option value="">All</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="discarded">Discarded</option><option value="false_positive">False Positive</option>',
+        '    </select></label>',
+        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">Apply Filter</button>',
+        '    <button class="btn btn-sm" onclick="admin.loadExceptionList()">Refresh</button>',
+        '  </div>',
+        '</section>',
+        # T23 手工操作入口
+        '<section class="panel" data-stage="exception">',
+        '  <h3>[Ops] Manual Operations</h3>',
+        '  <div class="row" data-stage-actions="exception" style="gap:8px;flex-wrap:wrap;"></div>',
+        '</section>',
+        # 列表
+        '<section class="panel">',
+        '  <h3>[Table] Exception Items</h3>',
+        '  <div id="exception-list" class="table-container">',
+        '    <table class="data-table" id="exception-table">',
+        '      <thead><tr><th>Exception ID</th><th>Type</th><th>Channel</th><th>Title</th><th>Status</th><th>Created</th><th>Operations</th></tr></thead>',
+        '      <tbody id="exception-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>',
+        '    </table>',
+        '    <div id="exception-pagination" class="pagination"></div>',
+        '  </div>',
+        '</section>',
+        # 脚本
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      admin.loadExceptionStats();',
+        '      admin.loadExceptionList();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_exception", "btn.data_center.view_exception", body, session)
+
+
+@router.get("/data_center/channel-funnel", response_class=HTMLResponse)
+def data_center_channel_funnel_page(session: dict | None = Depends(get_current_admin)):
+    """分渠道转化漏斗看板：按渠道展示6阶段漏斗+核心指标+排行"""
+    body_parts = [
+        '<section class="panel">',
+        '  <h3>[Chart] Channel Funnel — 分渠道转化效果看板</h3>',
+        '  <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px;">',
+        '    <label>Period <select id="channel-period">',
+        '      <option value="week">Last 4 Weeks</option><option value="month">Last 3 Months</option>',
+        '    </select></label>',
+        '    <label>Days <input type="number" id="channel-days" value="30" min="1" max="365" style="width:80px;"></label>',
+        '    <button class="btn btn-sm" onclick="admin.loadChannelFunnel()">Reload</button>',
+        '  </div>',
+        '  <div class="stats-grid" id="channel-total-stats">',
+        '    <div class="stat-card"><div class="stat-label">Total Crawl</div><div class="stat-value" id="total-crawl">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">Total Won</div><div class="stat-value" id="total-won">-</div></div>',
+        '    <div class="stat-card"><div class="stat-label">Overall Conv.</div><div class="stat-value" id="total-conv">-</div></div>',
+        '  </div>',
+        '</section>',
+        # 各渠道卡片网格
+        '<section class="panel">',
+        '  <h3>[Cards] Channel Performance</h3>',
+        '  <div class="channel-funnel-grid" id="channel-funnel-grid">',
+        '    <div class="empty-inline">Loading channel data...</div>',
+        '  </div>',
+        '</section>',
+        # 排行榜
+        '<section class="panel">',
+        '  <h3>[Ranking] Top Channels by Category</h3>',
+        '  <div class="rankings-grid" id="channel-rankings">',
+        '    <div class="empty-inline">Loading...</div>',
+        '  </div>',
+        '</section>',
+        # 趋势
+        '<section class="panel">',
+        '  <h3>[Clock] Period Trend</h3>',
+        '  <div class="trend-chart" id="channel-trend">',
+        '    <div class="empty-inline">Loading...</div>',
+        '  </div>',
+        '</section>',
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      admin.loadChannelFunnel();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_channel_funnel", "btn.data_center.view", body, session)
+
+
+@router.get("/data_center/batch", response_class=HTMLResponse)
+def data_center_batch_page(session: dict | None = Depends(get_current_admin)):
+    """批量操作中心：提交批量任务 + 查看执行进度 + 历史列表"""
+    body_parts = [
+        # 提交区
+        '<section class="panel">',
+        '  <h3>[Cog] Submit Batch Operation</h3>',
+        '  <div class="batch-form-grid" style="display:flex;flex-direction:column;gap:12px;">',
+        '    <label>Operation Type <select id="batch-op-type" style="padding:6px 8px;"></select></label>',
+        '    <label>Item IDs (comma separated, max 1000) ',
+        '      <textarea id="batch-item-ids" rows="3" style="width:100%;font-family:monospace;padding:6px 8px;font-size:12px;" placeholder="LEAD-123,LEAD-456,RAW-789..."></textarea>',
+        '    </label>',
+        '    <label>Reason <input type="text" id="batch-reason" placeholder="Why this batch operation?" style="width:100%;padding:6px 8px;"></label>',
+        '    <div class="row" style="gap:8px;">',
+        '      <button class="btn btn-primary" onclick="admin.submitBatch()">Submit Batch</button>',
+        '      <button class="btn btn-sm" onclick="admin.fillBatchDemo()">Fill Demo IDs</button>',
+        '    </div>',
+        '  </div>',
+        '</section>',
+        # 当前进度
+        '<section class="panel" id="batch-progress-section" style="display:none;">',
+        '  <h3>[Spinner] Batch Progress</h3>',
+        '  <div id="batch-progress-info"></div>',
+        '  <div class="progress-bar-container"><div class="progress-bar-fill" id="batch-progress-bar"></div></div>',
+        '  <div class="row" style="gap:8px;margin-top:12px;">',
+        '    <button class="btn btn-sm" onclick="admin.refreshBatchStatus()">Refresh Status</button>',
+        '  </div>',
+        '</section>',
+        # 历史批量任务
+        '<section class="panel">',
+        '  <h3>[History] Recent Batch Operations</h3>',
+        '  <div id="batch-list" class="table-container">',
+        '    <table class="data-table">',
+        '      <thead><tr><th>Batch ID</th><th>Operation</th><th>Operator</th><th>Total</th><th>Succeeded</th><th>Failed</th><th>Status</th><th>Risk</th><th>Started</th></tr></thead>',
+        '      <tbody id="batch-list-body"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>',
+        '    </table>',
+        '  </div>',
+        '</section>',
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      admin.loadBatchOpTypes();',
+        '      admin.loadBatchList();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_batch", "btn.data_center.batch_operation", body, session)
+
+
+@router.get("/data_center/export", response_class=HTMLResponse)
+def data_center_export_page(session: dict | None = Depends(get_current_admin)):
+    """数据导出中心：各阶段数据导出，支持脱敏/明文，下载历史"""
+    body_parts = [
+        # 提交区
+        '<section class="panel">',
+        '  <h3>[Download] Export Center</h3>',
+        '  <div style="display:flex;flex-direction:column;gap:12px;">',
+        '    <label>Stage <select id="export-stage" style="padding:6px 8px;"></select></label>',
+        '    <label><input type="checkbox" id="export-plaintext" style="margin-right:8px;"> Export Plaintext (Super Admin only)</label>',
+        '    <label>Reason <input type="text" id="export-reason" placeholder="Brief description of the export purpose" style="width:100%;padding:6px 8px;"></label>',
+        '    <div class="row" style="gap:8px;">',
+        '      <button class="btn btn-primary" onclick="admin.submitExport()">Submit Export</button>',
+        '    </div>',
+        '    <div class="manual-dialog-stage" style="margin-top:8px;">⚠ 所有默认导出为脱敏数据，明文导出需 Super Admin 权限，且全程留痕</div>',
+        '  </div>',
+        '</section>',
+        # 当前导出任务
+        '<section class="panel" id="export-progress-section" style="display:none;">',
+        '  <h3>[Spinner] Current Export</h3>',
+        '  <div id="export-progress-info"></div>',
+        '  <div class="progress-bar-container"><div class="progress-bar-fill" id="export-progress-bar"></div></div>',
+        '</section>',
+        # 导出历史
+        '<section class="panel">',
+        '  <h3>[History] Export History</h3>',
+        '  <div id="export-list" class="table-container">',
+        '    <table class="data-table">',
+        '      <thead><tr><th>Export ID</th><th>Stage</th><th>Operator</th><th>Rows</th><th>Size</th><th>Masked</th><th>Status</th><th>Time</th><th>Download</th></tr></thead>',
+        '      <tbody id="export-list-body"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>',
+        '    </table>',
+        '  </div>',
+        '</section>',
+        '<script>',
+        '  (function () {',
+        '    if (typeof admin !== "undefined") {',
+        '      admin.loadExportStages();',
+        '      admin.loadExportList();',
+        '    }',
+        '  })();',
+        '</script>',
+    ]
+    body = "\n".join(body_parts) + "\n"
+    return _render_with_permission("data_center_export", "btn.data_center.export_data", body, session)
+
+
 # 工具：确保 escape_html 可用（在 pages.py 顶部已经导入 html 模块上下文）
 def escape_html(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
