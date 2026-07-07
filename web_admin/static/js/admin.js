@@ -769,7 +769,7 @@
     // 渠道特有字段
     if (channel === "generic_web") {
       html += '<div class="row" style="flex-wrap:wrap;gap:12px;margin-top:8px;">';
-      html += '  <label>URL模板 <input type="text" name="url_template" form="task-create-form" placeholder="https://example.com/search?q={keyword}"/></label>';
+      html += '  <label><span style="color:#dc3545;font-weight:600;">★</span> URL模板（用 {keyword} 作为关键词占位符） <input type="text" name="url_template" form="task-create-form" placeholder="https://www.baidu.com/s?wd={keyword}" value="https://www.baidu.com/s?wd={keyword}" style="min-width:320px;"/></label>';
       html += '  <label>站点类型 <input type="text" name="site_type" form="task-create-form" placeholder="门户/论坛/资讯"/></label>';
       html += '  <label>抓取深度 <input type="number" name="max_depth" form="task-create-form" value="3" min="1" max="10"/></label>';
       html += '</div>';
@@ -821,16 +821,23 @@
 
   // 创建爬虫任务（提交表单）
   admin.createSpiderTask = function (event) {
-    if (event) event.preventDefault();
-    if (admin._submitting) {
-      admin.showError("操作进行中，请稍候...");
-      return false;
+    // ✅ 第一时间阻止默认行为（双重保险）
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
     }
-    var form = document.getElementById("task-create-form");
-    if (!form) {
-      admin.showError("未找到任务表单");
-      return false;
+    if (window.event && typeof window.event.returnValue !== "undefined") {
+      window.event.returnValue = false;
     }
+    try {
+      if (admin._submitting) {
+        admin.showError("操作进行中，请稍候...");
+        return false;
+      }
+      var form = document.getElementById("task-create-form");
+      if (!form) {
+        admin.showError("未找到任务表单");
+        return false;
+      }
     // 1) 获取渠道值：优先从外部下拉框（task-channel-select），其次从隐藏 input
     var sel = document.getElementById("task-channel-select");
     var hidden = document.getElementById("task-channel-hidden");
@@ -945,6 +952,12 @@
         admin._submitting = false;
         admin.showError("网络异常：" + (err && err.message ? err.message : err));
       });
+    } catch (e) {
+      // ✅ 外层 try-catch：捕获所有异常（避免表单默认 GET 提交）
+      admin._submitting = false;
+      admin.showError("创建任务失败：" + (e && e.message ? e.message : e));
+      console.error("createSpiderTask error:", e);
+    }
     return false;
   };
 
@@ -959,7 +972,7 @@
     }
     // 兼容旧逻辑
     tbody.innerHTML = '<tr><td colspan="8" class="empty">加载中...</td></tr>';
-    fetch("/api/admin/spider/tasks")
+    fetch("/api/admin/spider/tasks", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var items = (data && data.items) || (data && data.data && data.data.items) || [];
@@ -999,9 +1012,14 @@
     var tbody = document.getElementById("tasks-body");
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="8" class="empty">加载中...</td></tr>';
-    fetch("/api/admin/spider/tasks")
+    fetch("/api/admin/spider/tasks", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        // 处理未登录或其他错误
+        if (data && data.detail) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败：' + data.detail + '</td></tr>';
+          return;
+        }
         var items = (data && data.items) || (data && data.data && data.data.items) || [];
         if (!items.length) {
           tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无采集任务</td></tr>';
@@ -1035,7 +1053,7 @@
           var failed = typeof item.failed === "number" ? item.failed : 0;
           var next = item.next_run || "-";
           return '<tr data-job-id="' + jid + '">' +
-            '<td><code>' + jid + '</code></td>' +
+            '<td><a href="/admin/spider/' + jid + '" style="color:#007bff;text-decoration:none;"><code>' + jid + '</code></a></td>' +
             '<td>' + channel + '</td>' +
             '<td>' + name + '</td>' +
             '<td style="color:' + sColor + ';font-weight:500;">' + status + '</td>' +
@@ -1142,7 +1160,7 @@
     }
     var out = document.getElementById("logs-out");
     if (out) out.textContent = "加载中...";
-    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/logs")
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/logs", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (out) {
@@ -1159,6 +1177,115 @@
       });
   };
 
+  admin.loadSpiderDetail = function (jobId) {
+    if (!jobId) return;
+    // 1) 加载任务基础配置 + 进度
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var meta = (data && data.job) || {};
+        var config = meta || {};
+        var job_id = meta.job_id || jobId;
+        var channel = __zhChannel[meta.channel] || meta.channel || "";
+        var task_name = meta.task_name || "";
+        var status = __zhTaskStatus[meta.status] || meta.status || "未知";
+        var success = meta.success || 0;
+        var failed = meta.failed || 0;
+        var total = success + failed;
+        var sColor = "pending" === meta.status ? "#f5a623" : "running" === meta.status ? "#228b22" : "completed" === meta.status ? "#2c6fbb" : "failed" === meta.status ? "#dc3545" : "#6c757d";
+        // 基础配置
+        var configEl = document.getElementById("detail-config");
+        if (configEl) {
+          var rows = "";
+          rows += '<div class="kv"><div class="label">任务ID</div><div class="value"><code>' + job_id + '</code></div></div>';
+          rows += '<div class="kv"><div class="label">渠道类型</div><div class="value">' + channel + '</div></div>';
+          rows += '<div class="kv"><div class="label">任务名称</div><div class="value">' + task_name + '</div></div>';
+          rows += '<div class="kv"><div class="label">速度等级</div><div class="value">' + (meta.speed_level || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">采集上限</div><div class="value">' + (meta.max_items || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">调度方式</div><div class="value">' + (meta.schedule_mode || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">状态</div><div class="value" style="color:' + sColor + ';font-weight:500;">' + status + '</div></div>';
+          rows += '<div class="kv"><div class="label">关键词</div><div class="value">' + (Array.isArray(meta.keywords) ? meta.keywords.join(", ") : (meta.keywords || "")) + '</div></div>';
+          rows += '<div class="kv"><div class="label">URL模板</div><div class="value">' + (meta.url_template || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">地域</div><div class="value">' + (meta.region || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">行业</div><div class="value">' + (meta.industry || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">采集时间范围</div><div class="value">' + (meta.time_range || "") + '</div></div>';
+          rows += '<div class="kv"><div class="label">创建时间</div><div class="value">' + (meta.created_at || "") + '</div></div>';
+          configEl.innerHTML = rows;
+        }
+        // 进度
+        var progressEl = document.getElementById("detail-progress");
+        if (progressEl) {
+          var totalTarget = parseInt(meta.max_items) || 0;
+          var pct = totalTarget > 0 ? Math.min(100, Math.round(total / totalTarget * 100)) : 0;
+          progressEl.innerHTML = '<div style="display:flex;gap:12px;align-items:center;">' +
+            '<div style="flex:1;display:flex;flex-direction:column;gap:6px;"><span style="color:#495057;font-size:13px;">采集进度：' + pct + '%</span>' +
+            '<div style="width:100%;background:#e9ecef;border-radius:4px;height:8px;overflow:hidden;"><div style="width:' + pct + '%;background:#28a745;height:8px;"></div></div></div>' +
+            '<div style="min-width:180px;font-size:13px;color:#495057;">' +
+              '<span>成功: <span style="color:#28a745;font-weight:600;">' + success + '</span></span> &nbsp;|&nbsp;' +
+              '<span>失败: <span style="color:#dc3545;font-weight:600;">' + failed + '</span></span> &nbsp;|&nbsp;' +
+              '<span>总计: <span style="font-weight:600;">' + total + '</span></span>' +
+            '</div></div>';
+        }
+      })
+      .catch(function (e) {
+        var cfg = document.getElementById("detail-config");
+        if (cfg) cfg.innerHTML = '<span class="muted">加载失败：' + e.message + '</span>';
+        var prg = document.getElementById("detail-progress");
+        if (prg) prg.innerHTML = '<span class="muted">加载失败</span>';
+      });
+    // 2) 加载数据明细
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/items", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var items = (data && data.items) || [];
+        var body = document.getElementById("items-body");
+        if (body) {
+          if (items.length === 0) {
+            body.innerHTML = '<tr><td colspan="5" class="empty">(暂无数据)</td></tr>';
+          } else {
+            body.innerHTML = items.slice(0, 50).map(function (item, idx) {
+              var id = item.id || (idx + 1);
+              var title = (item.title || item.content || "").substring(0, 120);
+              var author = item.author || "";
+              var phone = item.phone || "(无)";
+              var email = item.email || "(无)";
+              return '<tr>' +
+                '<td><code>' + id + '</code></td>' +
+                '<td>' + title + '</td>' +
+                '<td>' + author + '</td>' +
+                '<td>' + phone + '</td>' +
+                '<td>' + email + '</td>' +
+                '</tr>';
+            }).join("");
+          }
+        }
+      })
+      .catch(function (e) {
+        var body = document.getElementById("items-body");
+        if (body) body.innerHTML = '<tr><td colspan="5" class="empty">加载失败：' + e.message + '</td></tr>';
+      });
+    // 3) 加载日志（并设置定时器，5秒刷新）
+    var logsEl = document.getElementById("task-logs");
+    if (logsEl) logsEl.textContent = "加载中...";
+    fetch("/api/admin/spider/task/" + encodeURIComponent(jobId) + "/logs", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var logs = (data && data.items) || [];
+        if (logsEl) {
+          if (logs.length === 0) logsEl.textContent = "(空)";
+          else logsEl.innerHTML = logs.map(function (x) { return '<div class="log-line">' + String(x) + '</div>'; }).join("");
+        }
+      })
+      .catch(function (e) {
+        if (logsEl) logsEl.textContent = "加载失败：" + e.message;
+      });
+  };
+  // 详情页自动刷新日志 + 进度 + 数据
+  admin.autoRefreshDetail = function (jobId, intervalSec) {
+    var sec = intervalSec || 15;
+    if (admin._detailTimer) clearInterval(admin._detailTimer);
+    admin._detailTimer = setInterval(function () { admin.loadSpiderDetail(jobId); }, sec * 1000);
+  };
   admin.loadNotificationsList = function () { /* stub */ };
   admin.markAllNotificationsRead = function () { /* stub */ };
 
@@ -1171,7 +1298,7 @@
 
   /* ---------- 1) Exception Pool ---------- */
   admin.loadExceptionStats = function () {
-    fetch("/api/admin/data_center/exception/stats")
+    fetch("/api/admin/data_center/exception/stats", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.data) {
@@ -1244,7 +1371,7 @@
               (ft ? "&exception_type=" + encodeURIComponent(ft) : "") +
               (fc ? "&channel=" + encodeURIComponent(fc) : "") +
               (fs ? "&status=" + encodeURIComponent(fs) : "");
-    fetch(url)
+    fetch(url, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var tbody = document.getElementById("exception-tbody");
@@ -1294,7 +1421,7 @@
     var period = document.getElementById("channel-period") ? document.getElementById("channel-period").value : "week";
     var days = document.getElementById("channel-days") ? document.getElementById("channel-days").value : "30";
     var url = "/api/admin/data_center/channel-funnel?period=" + period + "&days=" + days;
-    fetch(url)
+    fetch(url, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.data) return;
@@ -1383,7 +1510,7 @@
 
   /* ---------- 3) Batch Operation Center ---------- */
   admin.loadBatchOpTypes = function () {
-    fetch("/api/admin/data_center/batch/op-types")
+    fetch("/api/admin/data_center/batch/op-types", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var sel = document.getElementById("batch-op-type");
@@ -1431,7 +1558,7 @@
     var submitBtn = document.querySelector("#batch-progress-section");
     if (submitBtn) submitBtn.style.display = "block";
     admin.showToast("批量任务已提交", "info");
-    fetch(url, { method: "POST" })
+    fetch(url, { method: "POST", credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.data && data.data.batch_id) {
@@ -1446,7 +1573,7 @@
 
   admin.pollBatchStatus = function () {
     if (!admin._currentBatchId) return;
-    fetch("/api/admin/data_center/batch/" + admin._currentBatchId)
+    fetch("/api/admin/data_center/batch/" + admin._currentBatchId, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.data) return;
@@ -1477,7 +1604,7 @@
   };
 
   admin.loadBatchList = function () {
-    fetch("/api/admin/data_center/batch/list")
+    fetch("/api/admin/data_center/batch/list", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var body = document.getElementById("batch-list-body");
@@ -1509,7 +1636,7 @@
 
   /* ---------- 4) Export Center ---------- */
   admin.loadExportStages = function () {
-    fetch("/api/admin/data_center/export/list")
+    fetch("/api/admin/data_center/export/list", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var sel = document.getElementById("export-stage");
@@ -1542,7 +1669,7 @@
     var section = document.getElementById("export-progress-section");
     if (section) section.style.display = "block";
     admin.showToast("导出任务已提交", "info");
-    fetch(url, { method: "POST" })
+    fetch(url, { method: "POST", credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.data && data.data.export_id) {
@@ -1557,7 +1684,7 @@
 
   admin.pollExportStatus = function () {
     if (!admin._currentExportId) return;
-    fetch("/api/admin/data_center/export/" + admin._currentExportId)
+    fetch("/api/admin/data_center/export/" + admin._currentExportId, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.data) return;
@@ -1591,7 +1718,7 @@
   };
 
   admin.downloadExportFile = function (export_id) {
-    fetch("/api/admin/data_center/export/" + export_id)
+    fetch("/api/admin/data_center/export/" + export_id, { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.data || !data.data.file_content_b64) { admin.showToast("无法获取文件内容", "error"); return; }
@@ -1612,7 +1739,7 @@
   };
 
   admin.loadExportList = function () {
-    fetch("/api/admin/data_center/export/list")
+    fetch("/api/admin/data_center/export/list", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var body = document.getElementById("export-list-body");

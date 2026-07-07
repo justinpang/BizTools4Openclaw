@@ -198,7 +198,8 @@ services:
       - lite
 
   # ================= FastAPI 应用 — dev 模式 =================
-  # 连接 Postgres+Redis，使用镜像内构建好的代码（不挂载本地源码，避免 Windows 文件系统兼容问题）
+  # 连接 Postgres+Redis，**挂载本地源码**到 /app → 修改本地文件后容器自动生效
+  # Python 依赖在 /usr/local/lib/python3.11/site-packages，不受源码挂载影响
   app-dev:
     build:
       context: ..
@@ -235,7 +236,9 @@ services:
 
       ADAPTER_API_TOKENS: ${ADAPTER_API_TOKENS:-test-token-12345}
     volumes:
-      # 只挂载日志，不挂载源码（避免 Windows→Linux 文件系统兼容问题）
+      # 挂载本地项目源码到容器 /app → 修改本地文件后自动生效
+      - ../:/app
+      # 保留日志持久化（避免 /app/logs 被 Windows 文件系统影响）
       - dev_app_logs:/app/logs
     ports:
       - "${APP_PORT:-8000}:8000"

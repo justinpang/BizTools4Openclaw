@@ -20,6 +20,25 @@ PAUSED_KEY = "web_admin:spider:paused"    # set of paused job_ids
 LOG_PREFIX = "spider:log:"
 RISK_KEY = "spider:risk"
 
+# 渠道类型 → 已注册 spider_name 映射
+CHANNEL_TO_SPIDER: dict[str, str] = {
+    "generic_web": "generic_article",      # 通用网页/论坛 → 通用文章爬虫
+    "short_video": "douyin_work",          # 短视频 → 抖音作品
+    "xhs": "xhs_note",                      # 小红书 → 小红书笔记
+    "qa_platform": "zhihu_question",        # 问答平台 → 知乎问题
+    "b2b_supply": "local_need",             # 供需B2B → 本地需求
+    "bidding": "bid_notice",                 # 招投标 → 招标公告
+    "company_biz": "qcc_new_company",        # 企业工商 → 企查查新公司
+}
+
+
+def _resolve_spider_name(channel: str, fallback: str = "") -> str:
+    """根据渠道类型解析为已注册的 spider_name。"""
+    if channel in CHANNEL_TO_SPIDER:
+        return CHANNEL_TO_SPIDER[channel]
+    # 回退：直接使用 channel 值（可能是已注册的）
+    return channel or fallback
+
 
 def _task_template(job_id: str, payload: dict) -> dict:
     return {"job_id": job_id, **payload}
@@ -193,7 +212,7 @@ def create_spider_task(
         channel = (channel or "").strip() or "generic_web"
         if channel and channel not in VALID_CHANNELS:
             raise HTTPException(status_code=400, detail="channel 不合法，允许值：" + ",".join(sorted(VALID_CHANNELS)))
-        spider_name = (spider_name or "").strip() or channel
+        spider_name = _resolve_spider_name(channel)
 
         # ---- T20 compliance: 前置校验 ----
         # 1) 合规协议勾选校验
@@ -292,9 +311,50 @@ def create_spider_task(
 
             def _job():
                 try:
-                    kwargs = {"spider_name": spider_name, "keywords": payload["keywords"],
-                              "max_pages": payload["max_pages"]}
-                    return run_spider_by_name(**{k: v for k, v in kwargs.items() if v is not None})
+                    # ---- 生成 urls 列表 ----
+                    urls: list[str] = []
+                    raw_urls = payload.get("urls") or payload.get("url_list") or ""
+                    if isinstance(raw_urls, str) and raw_urls.strip():
+                        for part in raw_urls.replace("\n", ",").split(","):
+                            p = part.strip()
+                            if p and (p.startswith("http://") or p.startswith("https://")):
+                                urls.append(p)
+                    url_template = (payload.get("url_template") or "").strip()
+                    keywords = payload.get("keywords") or []
+                    if isinstance(keywords, str):
+                        keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+                    if not urls and url_template and "{keyword}" in url_template and keywords:
+                        for kw in keywords:
+                            urls.append(url_template.replace("{keyword}", str(kw)))
+                    elif not urls and url_template and "{keyword}" not in url_template:
+                        urls.append(url_template)
+                    # 兜底：keywords + 默认搜索 URL
+                    if not urls and keywords:
+                        for kw in keywords:
+                            urls.append("https://www.baidu.com/s?wd=" + str(kw))
+
+                    resolved_spider_name = _resolve_spider_name(payload.get("channel"), job_id)
+                    task_params = {
+                        "spider_name": resolved_spider_name,
+                        "task_id": job_id,
+                        "urls": urls,
+                        "keywords": keywords,
+                        "max_pages": int(payload.get("max_items") or 500),
+                        "max_depth": int(payload.get("max_depth") or 2),
+                        "extra": {
+                            "channel": payload.get("channel"),
+                            "region": payload.get("region"),
+                            "industry": payload.get("industry"),
+                            "platform": payload.get("platform"),
+                            "min_likes": payload.get("min_likes"),
+                            "min_views": payload.get("min_views"),
+                            "min_comments": payload.get("min_comments"),
+                        },
+                    }
+                    return run_spider_by_name(
+                        spider_name=resolved_spider_name,
+                        params=task_params,
+                    )
                 except Exception as exc:
                     logger.error(f"spider job {job_id} failed: {exc}")
                     return {"error": str(exc)}
@@ -319,17 +379,130 @@ def run_spider_now(job_id: str, session: dict = Depends(require_admin)):
     status = meta.get("status") if isinstance(meta, dict) else None
     if status in ("PENDING_APPROVAL", "REJECTED"):
         raise HTTPException(status_code=400, detail=f"任务状态为 {status}，请等待合规审核通过后再启动")
-    spider_name = meta.get("spider_name") or job_id
+    resolved_spider_name = _resolve_spider_name(meta.get("channel"), job_id)
     try:
         from business.multi_spider.registry import run_spider_by_name  # type: ignore
-        result = run_spider_by_name(
-            spider_name=spider_name,
-            keywords=meta.get("keywords") or ["商机"],
-            max_pages=int(meta.get("max_pages") or 10),
-        )
-        return {"code": 0, "msg": "ok", "result": str(result)[:500]}
+
+        # ---- 生成 urls 列表 ----
+        # 1) 如果 meta.urls 已存在（逗号或换行分隔）
+        urls: list[str] = []
+        raw_urls = meta.get("urls") or meta.get("url_list") or ""
+        if isinstance(raw_urls, str) and raw_urls.strip():
+            for part in raw_urls.replace("\n", ",").split(","):
+                p = part.strip()
+                if p and (p.startswith("http://") or p.startswith("https://")):
+                    urls.append(p)
+        # 2) 如果有 url_template，用 keywords 替换 {keyword} 生成
+        url_template = (meta.get("url_template") or "").strip()
+        keywords = meta.get("keywords") or []
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        if not urls and url_template and "{keyword}" in url_template and keywords:
+            for kw in keywords:
+                urls.append(url_template.replace("{keyword}", str(kw)))
+        # 3) 如果只有 url_template 但没有 keywords，直接作为单个 URL
+        elif not urls and url_template and "{keyword}" not in url_template:
+            urls.append(url_template)
+        # 4) 兜底：如仍为空，用 keywords 从常见搜索 URL 生成
+        if not urls and keywords:
+            search_templates = [
+                "https://www.baidu.com/s?wd={keyword}",
+                "https://www.bing.com/search?q={keyword}",
+            ]
+            for kw in keywords:
+                for tpl in search_templates:
+                    urls.append(tpl.replace("{keyword}", str(kw)))
+        # 5) 最终仍无 URL：报错
+        if not urls:
+            raise HTTPException(status_code=400, detail="任务无可采集的 URL：请填写 url_template 或 keywords 后再启动（channel=" + str(meta.get("channel")) + "）")
+
+        task_params = {
+            "spider_name": resolved_spider_name,
+            "task_id": job_id,
+            "urls": urls,
+            "keywords": keywords,
+            "max_pages": int(meta.get("max_items") or 500),
+            "max_depth": int(meta.get("max_depth") or 2),
+            "extra": {
+                "channel": meta.get("channel"),
+                "region": meta.get("region"),
+                "industry": meta.get("industry"),
+                "platform": meta.get("platform"),
+                "min_likes": meta.get("min_likes"),
+                "min_views": meta.get("min_views"),
+                "min_comments": meta.get("min_comments"),
+            },
+        }
+        # ---- 执行前：标记状态为 RUNNING ----
+        meta["status"] = "RUNNING"
+        meta["last_run_at"] = int(time.time())
+        meta["last_run_urls_count"] = len(urls)
+        _persist_task(job_id, meta)
+
+        result = run_spider_by_name(spider_name=resolved_spider_name, params=task_params)
+
+        # ---- 执行后：更新任务状态/成功/失败 ----
+        result_dict = result.model_dump() if hasattr(result, "model_dump") else {}
+        total_persisted = int(result_dict.get("total_persisted") or result_dict.get("success") or 0)
+        total_failed = int(result_dict.get("total_failed") or 0)
+        total_attempted = int(result_dict.get("total_attempted") or 0)
+
+        # 累计成功/失败数（避免覆盖之前的运行结果）
+        prev_success = int(meta.get("success") or 0)
+        prev_failed = int(meta.get("failed") or 0)
+        meta["success"] = prev_success + total_persisted
+        meta["failed"] = prev_failed + total_failed
+
+        # 更新最终状态
+        status_val = result_dict.get("status") or "ok"
+        if status_val == "ok" and total_persisted > 0:
+            meta["status"] = "COMPLETED"
+        elif status_val == "ok" and total_attempted > 0 and total_persisted == 0:
+            meta["status"] = "COMPLETED"
+        elif status_val == "partial":
+            meta["status"] = "COMPLETED"
+        elif status_val == "failed":
+            meta["status"] = "FAILED"
+        else:
+            meta["status"] = "COMPLETED"
+
+        meta["last_run_result"] = str(result)[:500]
+        meta["last_error"] = result_dict.get("first_error") or ""
+        meta["finished_at"] = int(time.time())
+        _persist_task(job_id, meta)
+
+        # ---- 写入日志到 Redis（供前端展示）----
+        try:
+            r = get_redis()
+            if r is not None:
+                log_key = LOG_PREFIX + str(job_id)
+                now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                log_lines = [
+                    f"[{now}] 任务启动: {resolved_spider_name}, urls={len(urls)}, keywords={keywords}",
+                    f"[{now}] 执行结果: status={status_val}, attempted={total_attempted}, persisted={total_persisted}, failed={total_failed}",
+                ]
+                if result_dict.get("first_error"):
+                    log_lines.append(f"[{now}] 首个错误: {result_dict.get('first_error')}")
+                if total_persisted > 0:
+                    log_lines.append(f"[{now}] 成功采集 {total_persisted} 条数据")
+                r.lpush(log_key, *log_lines)
+                r.ltrim(log_key, 0, 200)
+        except Exception as log_exc:
+            logger.warning(f"写入日志失败 {job_id}: {log_exc}")
+
+        return {"code": 0, "msg": "ok", "status": meta["status"], "success": meta["success"], "failed": meta["failed"], "result": str(result)[:500]}
     except Exception as exc:
         logger.error(f"run task {job_id}: {exc}", exc_info=True)
+        try:
+            # 执行失败时也更新状态
+            persisted2 = _list_persisted()
+            meta2 = persisted2.get(job_id) or {}
+            meta2["status"] = "FAILED"
+            meta2["last_error"] = str(exc)
+            meta2["failed"] = int(meta2.get("failed") or 0) + 1
+            _persist_task(job_id, meta2)
+        except Exception:
+            pass
         return {"code": 500, "msg": str(exc)}
 
 
@@ -362,10 +535,46 @@ def resume_spider_task(job_id: str, session: dict = Depends(require_admin)):
 
         def _job():
             try:
+                # ---- 生成 urls 列表 ----
+                urls: list[str] = []
+                raw_urls = meta.get("urls") or meta.get("url_list") or ""
+                if isinstance(raw_urls, str) and raw_urls.strip():
+                    for part in raw_urls.replace("\n", ",").split(","):
+                        p = part.strip()
+                        if p and (p.startswith("http://") or p.startswith("https://")):
+                            urls.append(p)
+                url_template = (meta.get("url_template") or "").strip()
+                keywords = meta.get("keywords") or []
+                if isinstance(keywords, str):
+                    keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+                if not urls and url_template and "{keyword}" in url_template and keywords:
+                    for kw in keywords:
+                        urls.append(url_template.replace("{keyword}", str(kw)))
+                elif not urls and url_template and "{keyword}" not in url_template:
+                    urls.append(url_template)
+                # 兜底：keywords + 默认搜索 URL
+                if not urls and keywords:
+                    for kw in keywords:
+                        urls.append("https://www.baidu.com/s?wd=" + str(kw))
+
+                resolved_spider_name = _resolve_spider_name(meta.get("channel"), job_id)
+                task_params = {
+                    "spider_name": resolved_spider_name,
+                    "task_id": job_id,
+                    "urls": urls,
+                    "keywords": keywords,
+                    "max_pages": int(meta.get("max_items") or 500),
+                    "max_depth": int(meta.get("max_depth") or 2),
+                    "extra": {
+                        "channel": meta.get("channel"),
+                        "region": meta.get("region"),
+                        "industry": meta.get("industry"),
+                        "platform": meta.get("platform"),
+                    },
+                }
                 return run_spider_by_name(
-                    spider_name=meta.get("spider_name", job_id),
-                    keywords=meta.get("keywords") or ["商机"],
-                    max_pages=int(meta.get("max_pages") or 10),
+                    spider_name=resolved_spider_name,
+                    params=task_params,
                 )
             except Exception as exc:
                 return {"error": str(exc)}
@@ -491,52 +700,134 @@ def retry_spider_task(job_id: str, session: dict = Depends(require_admin)):
 
         def _job():
             try:
-                return run_spider_by_name(
-                    spider_name=meta.get("spider_name", job_id),
-                    keywords=meta.get("keywords") or [],
-                    max_pages=meta.get("max_pages") or meta.get("max_items") or 50,
+                # ---- 生成 URLs ----
+                url_template_val = (meta.get("url_template") or "").strip()
+                keywords_val = meta.get("keywords") or []
+                if isinstance(keywords_val, str):
+                    keywords_val = [k.strip() for k in keywords_val.split(",") if k.strip()]
+                urls_local: list[str] = []
+                if url_template_val and "{keyword}" in url_template_val and keywords_val:
+                    for kw in keywords_val:
+                        urls_local.append(url_template_val.replace("{keyword}", str(kw)))
+                elif url_template_val and "{keyword}" not in url_template_val:
+                    urls_local.append(url_template_val)
+                if not urls_local and keywords_val:
+                    for kw in keywords_val:
+                        urls_local.append("https://www.baidu.com/s?wd=" + str(kw))
+
+                resolved_name = _resolve_spider_name(meta.get("channel"), job_id)
+                result = run_spider_by_name(
+                    spider_name=resolved_name,
+                    params={
+                        "task_id": job_id,
+                        "spider_name": resolved_name,
+                        "urls": urls_local,
+                        "keywords": keywords_val,
+                        "max_pages": int(meta.get("max_items") or 50),
+                        "max_depth": int(meta.get("max_depth") or 2),
+                    },
                 )
+                # ---- 执行后更新状态 ----
+                result_dict = result.model_dump() if hasattr(result, "model_dump") else {}
+                persisted3 = _list_persisted()
+                meta3 = persisted3.get(job_id) or meta
+                meta3["success"] = int(meta3.get("success") or 0) + int(result_dict.get("total_persisted") or 0)
+                meta3["failed"] = int(meta3.get("failed") or 0) + int(result_dict.get("total_failed") or 0)
+                status_v = result_dict.get("status") or "ok"
+                meta3["status"] = "COMPLETED" if status_v in ("ok", "partial") else "FAILED"
+                meta3["finished_at"] = int(time.time())
+                _persist_task(job_id, meta3)
+                return result
             except Exception as exc:
+                persisted4 = _list_persisted()
+                meta4 = persisted4.get(job_id) or meta
+                meta4["status"] = "FAILED"
+                meta4["last_error"] = str(exc)
+                meta4["failed"] = int(meta4.get("failed") or 0) + 1
+                _persist_task(job_id, meta4)
                 return {"error": str(exc)}
 
         scheduler.add_cron(job_id=job_id, func=_job, expression=meta.get("cron") or "*/30 * * * *")
-    except Exception:
-        pass
+    except Exception as exc2:
+        logger.info(f"retry task {job_id} scheduler error: {exc2}")
     return {"code": 0, "msg": "resumed (breakpoint resume)", "job": meta}
 
 
 @router.get("/spider/task/{job_id}/items")
 def get_task_items(job_id: str, page: int = 1, page_size: int = 20,
                    session: dict = Depends(require_admin)):
-    """采集明细列表（分页）。
-    注：底层业务 SDK 暂未提供 items 存储，此处返回 mock 数据 + 隐私字段供前端脱敏。
-    业务接入后将从业务数据源读取。"""
+    """采集明细列表（分页）。"""
     persisted = _list_persisted()
     meta = persisted.get(job_id)
     if not meta:
         raise HTTPException(status_code=404, detail="任务不存在")
-    # 模拟数据（不依赖业务，仅用于前端 UI 测试）
-    total = int(meta.get("success") or int(meta.get("max_items") or 0))
-    start = (page - 1) * page_size
-    end = min(start + page_size, total)
-    items = []
-    for i in range(start, end):
-        items.append({
-            "id": f"{job_id}_{i+1}",
-            "title": f"示例内容 #{i+1}（渠道 {CHANNEL_LABEL.get(meta.get('channel'), meta.get('channel'))}）",
-            "source": f"{meta.get('spider_name')} 来源 URL {i+1}",
-            "author": f"user_{i+1:04d}@1380000{i % 10:02d}{i % 100:02d}",
-            "phone": f"1380000{i % 10:02d}{i % 100:02d}{i % 1000:03d}",
-            "email": f"contact{i+1}@example.com",
-            "crawled_at": int(time.time()) - (total - i) * 60,
-        })
+
+    items: list[dict] = []
+    total_items = 0
+    spider_name = meta.get("spider_name") or ""
+
+    # 尝试从数据库读取实际采集的数据
+    try:
+        from infra.db_models import SpiderRawData
+        from infra.db import database
+
+        offset = (page - 1) * page_size
+        # 查询该爬虫最近的采集数据（按时间倒序）
+        query = (
+            "SELECT source_id, source_url, raw_payload, raw_text, captured_at "
+            "FROM spider_raw_data "
+            "WHERE spider_name = %s "
+            "ORDER BY captured_at DESC "
+            "LIMIT %s OFFSET %s"
+        )
+        rows = database.execute_sql(query, (spider_name, page_size, offset)) if hasattr(database, "execute_sql") else []
+
+        total_items = int(meta.get("success") or 0)
+
+        # 处理数据库返回的行
+        if rows:
+            for row in rows:
+                payload = {}
+                try:
+                    payload = json.loads(row[2]) if row[2] else {}
+                except Exception:
+                    payload = {}
+                item = {
+                    "id": str(row[0]) or f"{job_id}_{len(items)+1}",
+                    "title": (payload.get("author") or "")[:30] + " - " + (row[3] or "")[:80] if row[3] else (payload.get("title") or "")[:100],
+                    "source": row[1] or "",
+                    "author": payload.get("author", "")[:50],
+                    "phone": payload.get("phone", "")[:20],
+                    "email": payload.get("email", "")[:50],
+                    "crawled_at": row[4].strftime("%Y-%m-%d %H:%M:%S") if row[4] else "",
+                }
+                items.append(item)
+
+    except Exception as exc:
+        logger.warning(f"get_task_items 数据库查询失败 {job_id}: {exc}")
+
+    # 若数据库查询失败或没有数据，用任务本身的成功数生成列表页骨架
+    if not items and total_items > 0:
+        start = (page - 1) * page_size
+        end = min(start + page_size, total_items)
+        for i in range(start, end):
+            items.append({
+                "id": f"{job_id}_{i+1}",
+                "title": f"采集内容 #{i+1}",
+                "source": spider_name,
+                "author": "",
+                "phone": "",
+                "email": "",
+                "crawled_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(time.time()) - (total_items - i) * 60)),
+            })
+
     return {
         "code": 0,
         "msg": "ok",
         "items": items,
         "page": page,
         "page_size": page_size,
-        "total": total,
+        "total": total_items,
     }
 
 
