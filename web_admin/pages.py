@@ -373,7 +373,7 @@ def spider_page(session: dict | None = Depends(get_current_admin)):
         '  </form>\n'
         '  <div class="compliance-agreement-block" style="margin-top:16px;padding:16px;border:1px solid #ddd;border-radius:6px;background:#f8f9fa;">\n'
         '    <h4 style="margin:0 0 12px 0;font-size:15px;">⚖ 数据采集合规检查清单（保存前必须勾选）</h4>\n'
-        '    <div id="compliance-agreement-text" class="code-out" style="max-height:120px;overflow-y:auto;margin-bottom:12px;">加载中 合规协议...</div>\n'
+        '    <div id="compliance-agreement-text" class="code-out" style="max-height:120px;overflow-y:auto;margin-bottom:12px;font-size:12px;color:#495057;line-height:1.6;background:#fff;padding:10px;border-radius:4px;border:1px solid #dee2e6;">【数据采集合规协议】本工具仅用于合法的公开信息采集用途。使用者须遵守《网络安全法》《数据安全法》《个人信息保护法》及相关法律法规。不得采集：(1)个人隐私信息（手机号、邮箱、身份证号、地址等）；(2)国家机关/涉密单位非公开数据；(3)需登录后才能访问的数据；(4)受版权保护的内容；(5)违反目标网站 robots.txt 规则的数据。使用者对采集行为及数据使用承担全部法律责任。采集数据仅限内部业务分析使用，不得出售、出租或向第三方泄露。</div>\n'
         '    <div class="row" style="flex-wrap:wrap;gap:12px;">\n'
         '      <label><input type="checkbox" name="compliance_agreed" value="true" form="task-create-form"/> 我已阅读并同意《数据采集合规协议》</label>\n'
         '    </div>\n'
@@ -498,7 +498,7 @@ def spider_detail_page(job_id: str, session: dict | None = Depends(get_current_a
         '<section class="panel">',
         '  <h3>[操作] 任务操作</h3>',
         '  <div class="row">',
-        '    <button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runTask(\'' + job_id + '\')">立即运行</button>',
+        '    <button class="btn btn-sm" data-requires-permission="btn.spider.run" onclick="admin.runSpiderTask(\'' + job_id + '\')">立即运行</button>',
         '    <button class="btn btn-sm" data-requires-permission="btn.spider.pause" onclick="admin.pauseTask(\'' + job_id + '\')">暂停</button>',
         '    <button class="btn btn-sm" data-requires-permission="btn.spider.resume" onclick="admin.resumeTask(\'' + job_id + '\')">恢复</button>',
         '    <button class="btn btn-sm" data-requires-permission="btn.spider.retry" onclick="admin.retryTask(\'' + job_id + '\')">重试（继续采集）</button>',
@@ -524,9 +524,10 @@ def spider_detail_page(job_id: str, session: dict | None = Depends(get_current_a
         '  (function () {',
         '    if (typeof admin !== "undefined" && admin.loadSpiderDetail) {',
         '      admin.loadSpiderDetail("' + job_id + '");',
+        '      if (admin.autoRefreshDetail) admin.autoRefreshDetail("' + job_id + '", 10);',
         '    }',
         '    window.addEventListener("beforeunload", function () {',
-        '      if (admin && admin.stopTaskLogRefresh) admin.stopTaskLogRefresh();',
+        '      if (admin && admin._detailTimer) clearInterval(admin._detailTimer);',
         '    });',
         '  })();',
         '</script>',
@@ -1414,3 +1415,143 @@ def escape_html(s: str) -> str:
 
 
 __all__ = ["router"]
+
+
+# ============================================================
+# T27: 采集配置中心页面
+# ============================================================
+
+@router.get("/crawl/plans", response_class=HTMLResponse)
+def crawl_plans_page(session: dict | None = Depends(get_current_admin)):
+    """采集方案管理列表页"""
+    body = (
+        '<section class="panel">\n'
+        '  <div class="crawl-plans-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">\n'
+        '    <h2 style="margin:0;">📂 采集方案管理</h2>\n'
+        '    <div>\n'
+        '      <button class="btn btn-primary" onclick="crawlPlans.openEditor()">+ 新建方案</button>\n'
+        '      <button class="btn" onclick="crawlPlans.openImport()">批量导入</button>\n'
+        '      <button class="btn" onclick="crawlPlans.refresh()">🔄 刷新</button>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '  <div class="crawl-filter" style="margin-bottom:15px;padding:10px;background:#f7f9fc;border-radius:6px;">\n'
+        '    <input type="text" id="crawl-keyword" placeholder="搜索方案名称/域名..." style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;" />\n'
+        '    <select id="crawl-status" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;">\n'
+        '      <option value="">全部状态</option>\n'
+        '      <option value="draft">草稿</option>\n'
+        '      <option value="active">运行中</option>\n'
+        '      <option value="paused">已暂停</option>\n'
+        '      <option value="deleted">已删除</option>\n'
+        '    </select>\n'
+        '    <button class="btn btn-sm" onclick="crawlPlans.load()">筛选</button>\n'
+        '  </div>\n'
+        '  <div id="crawl-plans-container">加载中...</div>\n'
+        '</section>\n'
+        '\n'
+        '<script src="/admin/static/js/crawl_plans.js"></script>\n'
+    )
+    return _render_with_permission("crawl_plans", "btn.spider.view", body, session)
+
+
+@router.get("/crawl/editor", response_class=HTMLResponse)
+def crawl_editor_page(session: dict | None = Depends(get_current_admin)):
+    """可视化配置编辑器页面（5步向导）"""
+    body = (
+        '<section class="panel">\n'
+        '  <div class="editor-header" style="margin-bottom:15px;">\n'
+        '    <h2 style="margin:0;display:inline-block;">🎨 可视化采集配置编辑器</h2>\n'
+        '    <span id="crawl-step-indicator" style="margin-left:15px;color:#888;font-size:14px;">步骤 1/5</span>\n'
+        '  </div>\n'
+        '\n'
+        '  <!-- 步骤导航 -->\n'
+        '  <div class="crawl-steps" style="display:flex;margin-bottom:20px;background:#f0f4f8;padding:10px;border-radius:6px;">\n'
+        '    <div class="step-item" data-step="1" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;font-weight:bold;color:#1890ff;"><b>①</b> 输入 URL</div>\n'
+        '    <div class="step-item" data-step="2" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>②</b> 列表字段</div>\n'
+        '    <div class="step-item" data-step="3" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>③</b> 详情字段</div>\n'
+        '    <div class="step-item" data-step="4" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>④</b> 附件配置</div>\n'
+        '    <div class="step-item" data-step="5" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-radius:4px;color:#999;"><b>⑤</b> 保存调度</div>\n'
+        '  </div>\n'
+        '\n'
+        '  <!-- 主体：左侧表单 + 右侧预览 -->\n'
+        '  <div class="crawl-editor-layout" style="display:flex;gap:20px;min-height:500px;">\n'
+        '    <!-- 左侧表单区 -->\n'
+        '    <div id="crawl-form-panel" style="flex:1;min-width:380px;padding:15px;background:#fafbfc;border-radius:6px;border:1px solid #e8ecf0;">\n'
+        '      <div id="crawl-step-content" data-current-step="1">\n'
+        '        <p class="muted" style="color:#888;font-size:13px;">配置内容将在选择步骤后动态加载</p>\n'
+        '      </div>\n'
+        '    </div>\n'
+        '\n'
+        '    <!-- 右侧预览区 -->\n'
+        '    <div id="crawl-preview-panel" style="flex:2;padding:15px;background:#fafbfc;border-radius:6px;border:1px solid #e8ecf0;">\n'
+        '      <div id="crawl-preview-status" style="padding:40px;text-align:center;color:#999;">\n'
+        '        🖱 步骤 ① 输入 URL 并点击「预览渲染」查看页面\n'
+        '        <br><br>\n'
+        '        <span style="font-size:12px;">点击预览区中的元素可自动生成 CSS 选择器</span>\n'
+        '      </div>\n'
+        '      <div id="crawl-preview-content" style="display:none;"></div>\n'
+        '      <div id="crawl-preview-samples" style="margin-top:15px;padding:10px;background:white;border-radius:4px;border:1px dashed #ccd;display:none;"></div>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '\n'
+        '  <!-- 底部操作栏 -->\n'
+        '  <div class="crawl-actions" style="margin-top:20px;padding:15px 0;border-top:1px solid #eee;display:flex;justify-content:space-between;">\n'
+        '    <div>\n'
+        '      <button class="btn btn-sm" onclick="crawlEditor.prev()" id="btn-prev">← 上一步</button>\n'
+        '    </div>\n'
+        '    <div>\n'
+        '      <button class="btn btn-sm" onclick="crawlEditor.saveDraft()">保存草稿</button>\n'
+        '      <button class="btn btn-primary btn-sm" onclick="crawlEditor.testRun()">测试运行</button>\n'
+        '      <button class="btn btn-sm" onclick="crawlEditor.next()" id="btn-next">下一步 →</button>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</section>\n'
+        '\n'
+        '<script src="/admin/static/js/crawl_editor.js"></script>\n'
+    )
+    return _render_with_permission("crawl_editor", "btn.spider.view", body, session)
+
+
+@router.get("/crawl/monitor", response_class=HTMLResponse)
+def crawl_monitor_page(session: dict | None = Depends(get_current_admin)):
+    """采集任务监控页"""
+    body = (
+        '<section class="panel">\n'
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">\n'
+        '    <h2 style="margin:0;">📊 采集任务监控</h2>\n'
+        '    <button class="btn btn-sm" onclick="crawlMonitor.refresh()">🔄 刷新</button>\n'
+        '    <button class="btn btn-sm" onclick="crawlMonitor.autoToggle()" id="btn-auto">⏱ 自动刷新: 关</button>\n'
+        '  </div>\n'
+        '\n'
+        '  <!-- 状态卡片 -->\n'
+        '  <div id="crawl-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;"></div>\n'
+        '\n'
+        '  <!-- 运行记录列表 -->\n'
+        '  <h3>🕒 最近运行记录</h3>\n'
+        '  <div id="crawl-runs-container">加载中...</div>\n'
+        '</section>\n'
+        '\n'
+        '<script src="/admin/static/js/crawl_monitor.js"></script>\n'
+    )
+    return _render_with_permission("crawl_monitor", "btn.spider.view", body, session)
+
+
+@router.get("/crawl/fields", response_class=HTMLResponse)
+def crawl_fields_page(session: dict | None = Depends(get_current_admin)):
+    """字段模板库管理页"""
+    body = (
+        '<section class="panel">\n'
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">\n'
+        '    <h2 style="margin:0;">🏷 字段模板库</h2>\n'
+        '    <button class="btn btn-primary" onclick="crawlFields.addField()">+ 新增自定义字段</button>\n'
+        '  </div>\n'
+        '\n'
+        '  <!-- 模板分类 -->\n'
+        '  <div id="crawl-field-categories" style="margin-bottom:20px;">加载中...</div>\n'
+        '\n'
+        '  <!-- 字段列表 -->\n'
+        '  <div id="crawl-fields-list">加载中...</div>\n'
+        '</section>\n'
+        '\n'
+        '<script src="/admin/static/js/crawl_fields.js"></script>\n'
+    )
+    return _render_with_permission("crawl_fields", "btn.spider.view", body, session)

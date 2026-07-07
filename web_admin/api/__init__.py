@@ -12,6 +12,7 @@ from web_admin.api.audit_enhanced import router as audit_enhanced_router
 from web_admin.api.accounts import router as accounts_router
 from web_admin.api.compliance_rules import router as compliance_router
 from web_admin.api.data_center import router as data_center_router
+from web_admin.api.crawl_config import router as crawl_config_router
 
 __all__ = [
     "dashboard_router",
@@ -24,4 +25,5 @@ __all__ = [
     "accounts_router",
     "compliance_router",
     "data_center_router",
+    "crawl_config_router",
 ]

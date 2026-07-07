@@ -20,6 +20,7 @@ from web_admin.api import (
     spider_router,
     accounts_router,
     data_center_router,
+    crawl_config_router,
 )
 from web_admin.auth import get_current_admin
 from web_admin.middleware import build_audit_middleware
@@ -60,6 +61,7 @@ def mount_on(app: FastAPI) -> None:
     api_router.include_router(accounts_router)
     api_router.include_router(compliance_router)
     api_router.include_router(data_center_router)
+    api_router.include_router(crawl_config_router)
     app.mount("/api/admin", api_router, name="admin-api")
 
     # 2) 页面路由（/admin/*）
