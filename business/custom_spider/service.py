@@ -95,6 +95,10 @@ def _parse_engine_result(result: Any) -> Tuple[List[dict], int, int, Optional[fl
             match_rate = float(match_rate)
         error_msg = result.get("error") or result.get("error_msg") or ""
         alerts = result.get("alerts") or []
+        _error_list = result.get("errors") or result.get("error_list") or []
+        if _error_list:
+            _joined = "; ".join(str(e) for e in _error_list)
+            error_msg = error_msg or _joined
     else:
         # 可能是一个 EngineResult 对象
         try:
@@ -108,8 +112,14 @@ def _parse_engine_result(result: Any) -> Tuple[List[dict], int, int, Optional[fl
                 match_rate = float(match_rate)
             error_msg = str(getattr(result, "error", "") or "")
             alerts = getattr(result, "alerts", []) or []
+            _error_list = getattr(result, "errors", []) or []
+            if _error_list and not error_msg:
+                error_msg = "; ".join(str(e) for e in _error_list)
         except Exception:
             pass
+
+    if not error_msg and not items and not success_count:
+        error_msg = "引擎返回空结果，可能规则解析失败"
 
     return items, success_count, total_count, match_rate, error_msg, alerts
 

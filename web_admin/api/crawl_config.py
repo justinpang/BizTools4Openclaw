@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from infra.logger_setup import get_logger
 from infra.redis_client import get_redis
-from web_admin.auth import require_admin, _admin_session_key
+from web_admin.auth import require_admin, require_permission
 
 logger = get_logger("web_admin.crawl_config")
 router = APIRouter(tags=["admin"])
@@ -112,9 +112,10 @@ def list_plans_api(
     keyword: str = "",
     page: int = 1,
     page_size: int = 20,
-    session: dict = Depends(require_admin),
+    request: Request = None,
 ):
-    """采集方案列表（支持按状态/关键词筛选）"""
+    """采集方案列表（支持按状态/关键词筛选）。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         svc = _get_plan_service()
         if svc is None:
@@ -158,8 +159,9 @@ def list_plans_api(
 
 
 @router.post("/crawl/plans")
-async def create_plan_api(request: Request, session: dict = Depends(require_admin)):
-    """创建新方案"""
+async def create_plan_api(request: Request):
+    """创建新方案。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         body = await request.json()
     except Exception:
@@ -207,8 +209,9 @@ async def create_plan_api(request: Request, session: dict = Depends(require_admi
 
 
 @router.put("/crawl/plans/{plan_id}")
-async def update_plan_api(plan_id: int, request: Request, session: dict = Depends(require_admin)):
-    """更新方案"""
+async def update_plan_api(plan_id: int, request: Request):
+    """更新方案。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         body = await request.json()
     except Exception:
@@ -243,14 +246,13 @@ async def update_plan_api(plan_id: int, request: Request, session: dict = Depend
 
 
 @router.post("/crawl/plans/{plan_id}/clone")
-def clone_plan_api(plan_id: int, request: Request, session: dict = Depends(require_admin)):
-    """克隆方案"""
+async def clone_plan_api(plan_id: int, request: Request):
+    """克隆方案。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
-        body = await request.json() if False else {}  # 支持简单的 GET 式请求
-        # 简化：直接克隆，新名称自动生成
-        pass
+        body = await request.json()
     except Exception:
-        pass
+        body = {}
 
     operator = (session.get("username") or session.get("account") or "system") if session else "system"
 
@@ -275,8 +277,9 @@ def clone_plan_api(plan_id: int, request: Request, session: dict = Depends(requi
 
 
 @router.delete("/crawl/plans/{plan_id}")
-def delete_plan_api(plan_id: int, session: dict = Depends(require_admin)):
-    """删除方案（软删除）"""
+def delete_plan_api(plan_id: int, request: Request):
+    """删除方案（软删除）。"""
+    session = require_permission(request, "btn.spider.edit")
     operator = (session.get("username") or session.get("account") or "system") if session else "system"
     try:
         svc = _get_plan_service()
@@ -292,8 +295,9 @@ def delete_plan_api(plan_id: int, session: dict = Depends(require_admin)):
 
 
 @router.get("/crawl/plans/{plan_id}/detail")
-def get_plan_detail_api(plan_id: int, session: dict = Depends(require_admin)):
-    """获取方案详情（含规则配置）"""
+def get_plan_detail_api(plan_id: int, request: Request):
+    """获取方案详情（含规则配置）。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         svc = _get_plan_service()
         if svc is None:
@@ -315,8 +319,9 @@ def get_plan_detail_api(plan_id: int, session: dict = Depends(require_admin)):
 # ============================================================
 
 @router.post("/crawl/plans/{plan_id}/enable")
-def enable_schedule_api(plan_id: int, session: dict = Depends(require_admin)):
-    """启用采集调度"""
+def enable_schedule_api(plan_id: int, request: Request):
+    """启用采集调度。"""
+    session = require_permission(request, "btn.spider.edit")
     operator = (session.get("username") or session.get("account") or "system") if session else "system"
     try:
         svc = _get_plan_service()
@@ -332,8 +337,9 @@ def enable_schedule_api(plan_id: int, session: dict = Depends(require_admin)):
 
 
 @router.post("/crawl/plans/{plan_id}/disable")
-def disable_schedule_api(plan_id: int, session: dict = Depends(require_admin)):
-    """停用采集调度"""
+def disable_schedule_api(plan_id: int, request: Request):
+    """停用采集调度。"""
+    session = require_permission(request, "btn.spider.edit")
     operator = (session.get("username") or session.get("account") or "system") if session else "system"
     try:
         svc = _get_plan_service()
@@ -349,8 +355,9 @@ def disable_schedule_api(plan_id: int, session: dict = Depends(require_admin)):
 
 
 @router.post("/crawl/plans/{plan_id}/run")
-def run_plan_now_api(plan_id: int, session: dict = Depends(require_admin)):
-    """立即执行一次采集"""
+def run_plan_now_api(plan_id: int, request: Request):
+    """立即执行一次采集。"""
+    session = require_permission(request, "btn.spider.edit")
     operator = (session.get("username") or session.get("account") or "system") if session else "system"
     try:
         svc = _get_plan_service()
@@ -375,8 +382,9 @@ def run_plan_now_api(plan_id: int, session: dict = Depends(require_admin)):
 
 
 @router.post("/crawl/plans/{plan_id}/test")
-async def test_plan_api(plan_id: int, request: Request, session: dict = Depends(require_admin)):
-    """测试运行（快速验证，不入库）"""
+async def test_plan_api(plan_id: int, request: Request):
+    """测试运行（快速验证，不入库）。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         body = await request.json()
     except Exception:
@@ -426,8 +434,9 @@ async def test_plan_api(plan_id: int, request: Request, session: dict = Depends(
 # ============================================================
 
 @router.get("/crawl/plans/{plan_id}/export")
-def export_plan_api(plan_id: int, session: dict = Depends(require_admin)):
-    """导出方案配置（JSON）"""
+def export_plan_api(plan_id: int, request: Request):
+    """导出方案配置（JSON）。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         svc = _get_plan_service()
         if svc is None:
@@ -447,8 +456,9 @@ def export_plan_api(plan_id: int, session: dict = Depends(require_admin)):
 
 
 @router.post("/crawl/plans/import")
-async def import_plan_api(request: Request, session: dict = Depends(require_admin)):
-    """从 JSON 导入方案配置"""
+async def import_plan_api(request: Request):
+    """从 JSON 导入方案配置。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         body = await request.json()
     except Exception:
@@ -474,8 +484,9 @@ async def import_plan_api(request: Request, session: dict = Depends(require_admi
 # ============================================================
 
 @router.post("/crawl/preview/render")
-async def preview_render_api(request: Request, session: dict = Depends(require_admin)):
-    """URL 页面预渲染"""
+async def preview_render_api(request: Request):
+    """URL 页面预渲染。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         body = await request.json()
     except Exception:
@@ -558,8 +569,9 @@ async def preview_render_api(request: Request, session: dict = Depends(require_a
 
 
 @router.post("/crawl/preview/selector")
-async def preview_selector_api(request: Request, session: dict = Depends(require_admin)):
-    """用 CSS 选择器校验页面提取结果"""
+async def preview_selector_api(request: Request):
+    """用 CSS 选择器校验页面提取结果。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         body = await request.json()
     except Exception:
@@ -641,8 +653,9 @@ async def preview_selector_api(request: Request, session: dict = Depends(require
 
 
 @router.post("/crawl/preview/attachment")
-async def preview_attachment_api(request: Request, session: dict = Depends(require_admin)):
-    """附件解析预览（PDF/图片）"""
+async def preview_attachment_api(request: Request):
+    """附件解析预览（PDF/图片）。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         body = await request.json()
     except Exception:
@@ -695,8 +708,9 @@ async def preview_attachment_api(request: Request, session: dict = Depends(requi
 
 @router.get("/crawl/runs")
 def list_runs_api(plan_id: int = 0, status: str = "", page: int = 1, page_size: int = 20,
-                   session: dict = Depends(require_admin)):
-    """运行记录列表"""
+                  request: Request = None):
+    """运行记录列表。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         svc = _get_plan_service()
         if svc is None:
@@ -731,8 +745,9 @@ def list_runs_api(plan_id: int = 0, status: str = "", page: int = 1, page_size: 
 
 
 @router.get("/crawl/runs/{run_id}")
-def get_run_detail_api(run_id: int, session: dict = Depends(require_admin)):
-    """运行记录详情"""
+def get_run_detail_api(run_id: int, request: Request):
+    """运行记录详情。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         svc = _get_plan_service()
         if svc is None:
@@ -803,8 +818,9 @@ def _get_field_templates() -> Dict[str, List[Dict[str, Any]]]:
 
 
 @router.get("/crawl/fields/templates")
-def get_field_templates_api(session: dict = Depends(require_admin)):
-    """获取三类预设字段模板"""
+def get_field_templates_api(request: Request):
+    """获取三类预设字段模板。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         templates = _get_field_templates()
         return _success({"templates": templates, "categories": ["gov_notice", "enterprise", "violation", "custom"]})
@@ -814,8 +830,9 @@ def get_field_templates_api(session: dict = Depends(require_admin)):
 
 
 @router.get("/crawl/fields/custom")
-def get_custom_fields_api(session: dict = Depends(require_admin)):
-    """获取自定义字段列表"""
+def get_custom_fields_api(request: Request):
+    """获取自定义字段列表。"""
+    session = require_permission(request, "btn.spider.view")
     try:
         templates = _get_field_templates()
         return _success({"items": templates.get("custom", [])})
@@ -824,8 +841,9 @@ def get_custom_fields_api(session: dict = Depends(require_admin)):
 
 
 @router.post("/crawl/fields/custom")
-async def create_custom_field_api(request: Request, session: dict = Depends(require_admin)):
-    """新增自定义字段"""
+async def create_custom_field_api(request: Request):
+    """新增自定义字段。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         body = await request.json()
     except Exception:
@@ -864,8 +882,9 @@ async def create_custom_field_api(request: Request, session: dict = Depends(requ
 
 
 @router.put("/crawl/fields/custom/{field_id}")
-async def update_custom_field_api(field_id: str, request: Request, session: dict = Depends(require_admin)):
-    """更新自定义字段"""
+async def update_custom_field_api(field_id: str, request: Request):
+    """更新自定义字段。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         body = await request.json()
     except Exception:
@@ -901,8 +920,9 @@ async def update_custom_field_api(field_id: str, request: Request, session: dict
 
 
 @router.delete("/crawl/fields/custom/{field_id}")
-def delete_custom_field_api(field_id: str, session: dict = Depends(require_admin)):
-    """删除自定义字段"""
+def delete_custom_field_api(field_id: str, request: Request):
+    """删除自定义字段。"""
+    session = require_permission(request, "btn.spider.edit")
     try:
         templates = _get_field_templates()
         templates["custom"] = [f for f in templates["custom"] if f.get("id") != field_id]

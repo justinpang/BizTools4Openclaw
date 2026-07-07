@@ -125,6 +125,13 @@ try:
         try:
             from infra.db_base import database as _db
             _db.ensure_connected()
+            # T26: 定制采集方案 4 张表（显式建表，不受全局 Base.metadata 影响）
+            try:
+                from business.custom_spider import create_tables as _cs_create_tables
+                _cs_ok = _cs_create_tables()
+                logger.info(f"startup: custom_spider tables ready={_cs_ok}")
+            except Exception as exc:
+                logger.warning(f"startup: custom_spider tables init warning: {exc}")
             logger.info(f"startup: DB backend ready (engine={_db.engine})")
         except Exception as exc:
             logger.warning(f"startup: DB init warning: {exc}")

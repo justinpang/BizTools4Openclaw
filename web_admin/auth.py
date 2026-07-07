@@ -42,6 +42,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     ROLE_SUPER_ADMIN: {
         "btn.dashboard.view",
         "btn.spider.view",
+        "btn.spider.edit",
         "btn.spider.create",
         "btn.spider.delete",
         "btn.spider.run",
@@ -85,6 +86,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     ROLE_OPS: {
         "btn.dashboard.view",
         "btn.spider.view",
+        "btn.spider.edit",
         "btn.spider.create",
         "btn.spider.run",
         "btn.spider.pause",
