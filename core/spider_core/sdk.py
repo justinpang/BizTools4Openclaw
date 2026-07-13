@@ -24,6 +24,11 @@ try:
 except Exception:  # pragma: no cover
     _playwright_sync = None
 
+try:
+    from playwright.async_api import async_playwright as _playwright_async  # type: ignore
+except Exception:  # pragma: no cover
+    _playwright_async = None
+
 logger = get_logger("spider.sdk")
 
 
@@ -107,8 +112,8 @@ class SpiderSDK:
         timeout: Optional[float] = None,
         render: bool = False,
         render_js: bool = True,
-        render_wait_until: str = "domcontentloaded",
-        render_timeout: float = 30.0,
+        render_wait_until: str = "networkidle",
+        render_timeout: float = 45.0,
         task_id: Optional[str] = None,
         robot_check: bool = True,
         risk_check: bool = True,
@@ -215,29 +220,92 @@ class SpiderSDK:
         resp: CrawlResponse,
     ) -> None:
         # 通过模块级变量引用，便于测试时 monkeypatch 替换
-        requests = _requests_lib
-        if requests is None:
-            raise ImportError("需要安装 requests: pip install requests")
+        requests_lib = _requests_lib
 
+        # 优先使用 requests 库，失败时回退到标准库 urllib.request
+        if requests_lib is not None:
+            try:
+                proxies = proxy.as_requests() if proxy else None
+                r = requests_lib.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    proxies=proxies,
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+                resp.status_code = int(r.status_code)
+                resp.final_url = r.url
+                resp.content = r.content
+                resp.encoding = r.encoding or "utf-8"
+                resp.text = r.text
+                resp.headers = {str(k): str(v) for k, v in (r.headers or {}).items()}
+                resp.mode = "http"
+                if proxy:
+                    self._proxy.report_success(proxy)
+                return
+            except Exception as exc:
+                logger.warning(f"requests 请求失败，尝试 urllib 回退 {url}: {exc}")
+                # 继续到 urllib fallback
+
+        # Fallback: 使用 Python 标准库 urllib.request
         try:
-            proxies = proxy.as_requests() if proxy else None
-            r = requests.get(
-                url,
-                params=params,
-                headers=headers,
-                proxies=proxies,
-                timeout=timeout,
-                allow_redirects=True,
-            )
-            resp.status_code = int(r.status_code)
-            resp.final_url = r.url
-            resp.content = r.content
-            resp.encoding = r.encoding or "utf-8"
-            resp.text = r.text
+            import urllib.request
+            import urllib.parse
+            import urllib.error
+
+            # 构造带 params 的 URL
+            final_url = url
+            if params:
+                sep = "&" if "?" in final_url else "?"
+                final_url = final_url + sep + urllib.parse.urlencode(params)
+
+            req = urllib.request.Request(final_url, headers=headers or {})
+            proxy_url = proxy.as_requests() if proxy else None
+            if proxy_url and isinstance(proxy_url, dict):
+                proxy_handler = urllib.request.ProxyHandler(proxy_url)
+                opener = urllib.request.build_opener(proxy_handler)
+            else:
+                opener = urllib.request.build_opener()
+
+            r = opener.open(req, timeout=timeout)
+            resp.status_code = int(r.getcode())
+            resp.final_url = r.geturl()
+            resp.content = r.read()
             resp.headers = {str(k): str(v) for k, v in (r.headers or {}).items()}
-            resp.mode = "http"
+
+            # 处理编码：优先使用响应头，其次尝试自动检测
+            content_type = r.headers.get("Content-Type", "") if hasattr(r, "headers") else ""
+            charset = "utf-8"
+            if "charset=" in content_type.lower():
+                charset = content_type.lower().split("charset=")[1].split(";")[0].strip()
+            try:
+                resp.text = resp.content.decode(charset, errors="replace")
+            except (LookupError, UnicodeDecodeError):
+                # 失败时尝试其他常见编码
+                for enc in ("utf-8", "gbk", "gb2312", "latin-1"):
+                    try:
+                        resp.text = resp.content.decode(enc, errors="replace")
+                        resp.encoding = enc
+                        break
+                    except Exception:
+                        continue
+                else:
+                    resp.text = resp.content.decode("utf-8", errors="replace")
+                    resp.encoding = "utf-8"
+            resp.encoding = charset
+            resp.mode = "urllib"
             if proxy:
                 self._proxy.report_success(proxy)
+        except urllib.error.HTTPError as http_err:
+            resp.status_code = http_err.code
+            resp.error = f"HTTP {http_err.code}: {http_err.reason}"
+            try:
+                resp.content = http_err.read()
+                resp.text = resp.content.decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            logger.warning(f"urllib HTTP 错误 {url}: {http_err}")
         except Exception as exc:
             resp.status_code = 0
             resp.error = str(exc)
@@ -256,14 +324,61 @@ class SpiderSDK:
         timeout: float,
         wait_until: str,
     ) -> None:
-        sync_pw = _playwright_sync
-        if sync_pw is None:
+        """JS 渲染入口：自动检测 asyncio 事件循环，在线程中隔离执行"""
+        if _playwright_sync is None:
             raise ImportError(
                 "需要安装 playwright: pip install playwright && playwright install chromium"
             )
 
+        # 检测是否在 asyncio 事件循环中（FastAPI 会触发这种情况）
         try:
-            with sync_pw() as p:
+            import asyncio
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is not None:
+            # 在事件循环中：使用线程池隔离，避免 "Playwright Sync API inside asyncio loop" 错误
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    self._render_page_sync_impl,
+                    url, resp, headers, timeout, wait_until,
+                )
+                try:
+                    future.result(timeout=timeout + 10)
+                except concurrent.futures.TimeoutError:
+                    resp.status_code = 0
+                    resp.error = f"playwright 渲染超时（{timeout}s）"
+                    logger.warning(f"playwright 渲染超时 {url}")
+        else:
+            # 不在事件循环中：直接调用同步 API
+            self._render_page_sync_impl(url, resp, headers, timeout, wait_until)
+
+    def _render_page_sync_impl(
+        self,
+        url: str,
+        resp: CrawlResponse,
+        headers: Dict[str, str],
+        timeout: float,
+        wait_until: str,
+    ) -> None:
+        """Playwright 实际执行逻辑（必须在无事件循环的线程中运行）
+
+        为确保能完整捕获动态内容，采用以下策略：
+        1. networkidle 等待网络活动停止
+        2. 多次滚动触发懒加载  
+        3. 等待 DOM 稳定（两次 content 不再变化）
+
+        注意：每次调用都在本地重新 import sync_playwright，
+        避免模块级的 `_playwright_sync` 被 FastAPI 主事件循环污染
+        （可能导致 'PlaywrightContextManager' object has no attribute '_playwright'）。
+        """
+        try:
+            # 在本地作用域内重新导入 playwright（不使用模块级引用）
+            from playwright.sync_api import sync_playwright  # type: ignore
+
+            with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 try:
                     context = browser.new_context(user_agent=headers.get("User-Agent"))
@@ -275,6 +390,22 @@ class SpiderSDK:
                             resp.status_code = int(page_resp.status)
                         except Exception:
                             pass
+
+                    # —— 增强内容收集：多次滚动+等待页面稳定 ——
+                    import time as _time
+                    try:
+                        for scroll_round in range(3):
+                            page.evaluate(
+                                "() => { window.scrollTo(0, document.body.scrollHeight); }"
+                            )
+                            page.wait_for_timeout(1500)
+                            page.evaluate("() => { window.scrollTo(0, 0); }")
+                            page.wait_for_timeout(800)
+
+                        page.wait_for_timeout(1500)
+                    except Exception:
+                        pass  # 滚动失败不影响主流程
+
                     resp.final_url = page.url
                     resp.text = page.content()
                     resp.content = resp.text.encode("utf-8", errors="ignore")

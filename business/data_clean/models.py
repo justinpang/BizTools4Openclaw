@@ -24,6 +24,8 @@ class CleanTaskParams(BaseModel):
     since: str | None = None           # 只处理 ≥ 该日期的记录（YYYY-MM-DD）
     run_engine: bool = True            # 是否运行 T07 pipeline；false = 只做实体抽取
     run_storage: bool = True           # 是否写入 DB；false = 干跑
+    run_enterprise_enrich: bool = False  # T29: 是否启用企业信息补全
+    enrich_mode: str = "async"         # T29: "async" 异步或 "sync" 同步
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -63,6 +65,11 @@ class EntityExtract(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     budget: dict[str, Any] = Field(default_factory=dict)
     estimated_text_length: int = 0
+
+    # ---- T29 企业信息补全（仅当原数据缺失联系方式时触发）----
+    enriched: bool = False
+    enrichment_source: str = ""
+    enrichment_profile: dict[str, Any] = Field(default_factory=dict)
 
 
 # =====================

@@ -65,7 +65,7 @@
       var p = items[i];
       var rowStyle = (i % 2 === 0) ? "background:white;" : "background:#fafbfc;";
       var actions = [];
-      actions.push('<a href="/admin/crawl/editor?plan_id=' + p.id + '" style="margin-right:8px;">编辑</a>');
+      actions.push('<a href="/admin/crawl/steps-editor?plan_id=' + p.id + '" style="margin-right:8px;">编辑</a>');
       actions.push('<a href="javascript:crawlPlans.clone(' + p.id + ')" style="margin-right:8px;">克隆</a>');
       actions.push('<a href="javascript:crawlPlans.test(' + p.id + ')" style="margin-right:8px;">测试</a>');
       if (p.status === "active") {
@@ -143,7 +143,7 @@
     load: loadPlans,
     refresh: loadPlans,
     openEditor: function () {
-      window.location.href = "/admin/crawl/editor";
+      window.location.href = "/admin/crawl/steps-editor";
     },
     openImport: function () {
       var raw = window.prompt("粘贴 JSON 配置（导出的方案内容）：");

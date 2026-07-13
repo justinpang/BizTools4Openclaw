@@ -1768,8 +1768,55 @@
       }).catch(function () { /* ignore */ });
   };
 
+  // 菜单分组折叠功能（更可靠的实现）
+  admin.toggleMenuGroup = function (groupKey) {
+    var group = document.querySelector('.menu-group[data-group="' + groupKey + '"]');
+    if (!group) return;
+    var items = group.querySelector(".menu-group-items");
+    if (!items) return;
+    var isCollapsed = group.classList.toggle("group-collapsed");
+    // 直接控制 display 来保证折叠/展开生效
+    items.style.display = isCollapsed ? "none" : "flex";
+    // 保存折叠状态到 localStorage
+    try {
+      var collapsed = JSON.parse(localStorage.getItem("admin_collapsed_groups") || "[]");
+      if (isCollapsed) {
+        if (collapsed.indexOf(groupKey) === -1) collapsed.push(groupKey);
+      } else {
+        collapsed = collapsed.filter(function (k) { return k !== groupKey; });
+      }
+      localStorage.setItem("admin_collapsed_groups", JSON.stringify(collapsed));
+    } catch (e) { /* ignore */ }
+  };
+
+  // 初始化时恢复折叠状态
+  function restoreMenuState() {
+    try {
+      var collapsed = JSON.parse(localStorage.getItem("admin_collapsed_groups") || "[]");
+      collapsed.forEach(function (k) {
+        var g = document.querySelector('.menu-group[data-group="' + k + '"]');
+        if (g) {
+          g.classList.add("group-collapsed");
+          var items = g.querySelector(".menu-group-items");
+          if (items) items.style.display = "none";
+        }
+      });
+      // 默认展开当前活动菜单
+      var active = document.querySelector('.menu-item.active');
+      if (active) {
+        var parentGroup = active.closest('.menu-group');
+        if (parentGroup) {
+          parentGroup.classList.remove("group-collapsed");
+          var items = parentGroup.querySelector(".menu-group-items");
+          if (items) items.style.display = "flex";
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     applyPermissionVisibility();
+    restoreMenuState();
     try { renderStageActionBar(); } catch (e) { /* ignore */ }
     try { injectRowActionButtons(); } catch (e) { /* ignore */ }
     var ak = (admin.init && admin.init.activeKey) || "";

@@ -100,7 +100,14 @@ class AttachmentParser:
 
     # ---------- public ----------
 
-    def download(self, url: str, *, task_id: Optional[str] = None) -> bytes:
+    def download(self, url: str, *, base_url: Optional[str] = None, task_id: Optional[str] = None) -> bytes:
+        from urllib.parse import urljoin
+        # 补全相对 URL
+        if url and not url.startswith(("http://", "https://")) and base_url:
+            try:
+                url = urljoin(base_url, url)
+            except Exception:
+                pass
         resp = self._sdk.get(url, timeout=60.0, task_id=task_id, robot_check=False)
         if resp.error:
             raise RuntimeError(f"附件下载失败: {resp.error}")
@@ -113,19 +120,28 @@ class AttachmentParser:
         self,
         url: str,
         *,
+        base_url: Optional[str] = None,
         filename: Optional[str] = None,
         mime_type: Optional[str] = None,
         task_id: Optional[str] = None,
     ) -> AttachmentResult:
         start = time.monotonic()
+        # 记录原始 URL（可能是相对 URL），但下载时会用补全后的 URL
         out = AttachmentResult(source_url=url, filename=filename or self._filename(url))
         try:
             mime = mime_type or self._guess_mime(url)
             out.mime_type = mime
 
-            # 下载
-            raw = self.download(url, task_id=task_id)
+            # 下载（内部处理 base_url 补全）
+            raw = self.download(url, base_url=base_url, task_id=task_id)
             out.file_size_bytes = len(raw)
+            # 下载完成后，source_url 替换为实际下载的 URL（如果被补全了）
+            if not url.startswith(("http://", "https://")) and base_url:
+                from urllib.parse import urljoin
+                try:
+                    out.source_url = urljoin(base_url, url)
+                except Exception:
+                    pass
             max_bytes = int(self._cfg.attachment_max_mb * 1024 * 1024) if self._cfg.attachment_max_mb else 50 * 1024 * 1024
             if out.file_size_bytes > max_bytes:
                 out.parse_status = "partial"

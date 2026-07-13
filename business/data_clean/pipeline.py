@@ -17,7 +17,6 @@ from business.data_clean.models import (
 )
 from business.data_clean.normalizer import Normalizer
 from business.data_clean.storage import Storage
-
 logger = get_logger("data_clean.pipeline")
 
 
@@ -42,6 +41,7 @@ class DataCleanPipeline:
         engine_step: EngineStep | None = None,
         normalizer: Normalizer | None = None,
         storage: Storage | None = None,
+        enterprise_enrich_step: object | None = None,
     ) -> None:
         self.dirty_filter = dirty_filter or DirtyFilter()
         self.extractor = extractor or EntityExtractor()
@@ -49,6 +49,8 @@ class DataCleanPipeline:
         self.engine_step = engine_step or EngineStep()
         self.normalizer = normalizer or Normalizer()
         self.storage = storage or Storage()
+        # T29 企业信息补全节点（懒加载，避免未启用时拖慢启动）
+        self._enterprise_enrich_step = enterprise_enrich_step
 
     def run(
         self,
@@ -179,6 +181,23 @@ class DataCleanPipeline:
         else:
             result.passed = len(opportunities)
             result.anomalies = len(anomalies)
+
+        # 7.5) T29 企业信息补全（可选，默认关闭；通过 CleanTaskParams 开启）
+        if getattr(params, "run_enterprise_enrich", False):
+            try:
+                from business.data_clean.enterprise_enrich import EnterpriseEnrichStep
+
+                if self._enterprise_enrich_step is None:
+                    self._enterprise_enrich_step = EnterpriseEnrichStep()
+                mode = getattr(params, "enrich_mode", "async")
+                enrich_stats = self._enterprise_enrich_step.process_opportunities(
+                    opportunities, mode=mode
+                )
+                # 写到 result 中（不阻塞主流程；如果 enrich_stats 中含 task_id，则返回给调用方）
+                if enrich_stats and "enriched" in enrich_stats:
+                    result.enrichment_stats = enrich_stats
+            except Exception as exc:
+                logger.warning(f"企业补全节点异常: {exc}")
 
         # 8) 告警
         self._maybe_alert(params, result)

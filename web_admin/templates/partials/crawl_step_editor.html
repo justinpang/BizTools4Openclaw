@@ -1,0 +1,207 @@
+<!-- T32: crawl_step_editor.html — 内嵌交互式浏览器 + 操作录制 + 智能指令
+     三栏布局：顶部操作栏 + 左侧浏览器画布 + 右侧上下栏（步骤列表 + 步骤详情）
+     样式：/admin/static/css/admin.css
+     JS：   /admin/static/js/crawl_step_editor.js
+-->
+<div class="crawl-step-editor t32" id="crawl-step-editor">
+
+  <!-- 隐藏输入：存储 plan_id 与 spider_type（JS 会读写这些值） -->
+  <input type="hidden" id="crawl-edit-plan-id" value="" />
+  <input type="hidden" id="crawl-spider-type" value="generic" />
+
+  <!-- 1. 顶部操作栏 -->
+  <div class="crawl-step-topbar">
+    <div class="crawl-step-topbar-left">
+      <span class="brand-label">🧩 采集方案</span>
+      <input type="text" id="crawl-plan-name" placeholder="方案名称（可选）" style="width:220px;" />
+      <span class="divider">|</span>
+      <button class="btn btn-ghost" id="crawl-browser-back" title="浏览器后退" onclick="window.crawlGoBack()">◀</button>
+      <button class="btn btn-ghost" id="crawl-browser-forward" title="浏览器前进" onclick="window.crawlGoForward()">▶</button>
+      <button class="btn btn-ghost" id="crawl-browser-reload" title="重新加载" onclick="window.crawlReload()">⟳</button>
+      <input type="text" id="crawl-url-input" placeholder="输入目标 URL（如：https://example.gov.cn/news/list）" onkeydown="if(event.key==='Enter')window.crawlLoadPreview()" />
+      <button class="btn btn-primary" id="crawl-load-preview" data-action="preview-render" onclick="window.crawlLoadPreview()">📡 加载预览</button>
+    </div>
+
+    <div class="crawl-step-topbar-right">
+      <!-- 模式切换：浏览 / 拾取 / 录制 -->
+      <span class="mode-group">
+        <button class="btn btn-ghost mode-btn active" data-mode="browse" onclick="window.crawlSetMode('browse')">👁 浏览</button>
+        <button class="btn btn-ghost mode-btn" data-mode="pick" onclick="window.crawlSetMode('pick')">🧲 拾取</button>
+        <button class="btn btn-ghost mode-btn" data-mode="record" onclick="window.crawlSetMode('record')">⚡ 录制</button>
+      </span>
+      <span class="divider">|</span>
+      <button class="btn btn-warn" id="crawl-test-current" onclick="window.crawlTestCurrent()">🔍 测试当前步骤</button>
+      <button class="btn" id="crawl-test-incremental" onclick="window.crawlTestIncremental()">⏩ 增量测试</button>
+      <button class="btn" id="crawl-test-full" onclick="window.crawlTestFull()">🔗 全链路测试</button>
+      <span class="divider">|</span>
+      <button class="btn" id="crawl-version-btn" onclick="window.crawlShowVersions()">📜 历史版本</button>
+      <button class="btn btn-success" id="crawl-save-plan" onclick="window.crawlSavePlan()">💾 保存方案</button>
+    </div>
+  </div>
+
+  <!-- 2. 主区域：左侧浏览器 + 右侧上下栏 -->
+  <div class="crawl-step-body">
+
+    <!-- 2.1 浏览器画布 -->
+    <div class="crawl-step-browser" id="crawl-step-browser">
+
+      <div class="browser-toolbar">
+        <span class="browser-current-url" id="browser-current-url">（未加载）</span>
+        <div class="browser-status" id="browser-status">👁 浏览模式 — 悬浮元素查看选择器</div>
+      </div>
+
+      <div class="browser-canvas-wrap">
+        <!-- iframe：承载远程页面的渲染结果 -->
+        <iframe id="crawl-iframe" class="crawl-iframe"
+                sandbox="allow-same-origin allow-scripts allow-forms"
+                title="页面预览">
+        </iframe>
+
+        <!-- 初始空状态占位符（首次加载后隐藏） -->
+        <div class="browser-empty-placeholder" id="browser-empty-placeholder">
+          <div class="big-icon">🌐</div>
+          <div>请输入目标 URL 并点击「加载预览」</div>
+          <div class="hint">预览将在此处展示目标页面内容</div>
+        </div>
+
+        <!-- 加载中遮罩 -->
+        <div class="browser-loading-mask hidden" id="browser-loading-mask">
+          <div class="spinner"></div>
+          <div>正在渲染页面...</div>
+        </div>
+
+        <!-- 高亮层（悬浮时显示元素边界 + 选择器文本） -->
+        <div class="crawl-highlight" id="crawl-highlight"></div>
+        <div class="crawl-highlight-label" id="crawl-highlight-label"></div>
+      </div>
+
+      <!-- 浏览器底部：页面元信息 -->
+      <div class="browser-footer">
+        <div class="bf-item"><strong>状态:</strong> <span id="bf-status">—</span></div>
+        <div class="bf-item"><strong>标题:</strong> <span id="bf-title">—</span></div>
+        <div class="bf-item"><strong>链接数:</strong> <span id="bf-links">—</span></div>
+        <div class="bf-item"><strong>候选列表:</strong> <span id="bf-suggest">—</span></div>
+      </div>
+    </div>
+
+    <!-- 2.2 右侧上下栏：步骤列表 + 步骤详情 -->
+    <aside class="crawl-step-sidebar" id="crawl-step-sidebar">
+
+      <!-- 上部：步骤列表 -->
+      <div class="steps-list-wrapper">
+        <div class="sidebar-head">
+          <strong>步骤列表</strong>
+          <div class="sidebar-head-right">
+            <button class="btn btn-sm" id="crawl-add-step" onclick="window.crawlOpenModal()">+ 新增</button>
+            <button class="btn btn-sm" id="crawl-command-btn" onclick="window.crawlOpenModal()">⚡ 插入指令</button>
+          </div>
+        </div>
+
+        <div class="steps-list" id="steps-list">
+          <!-- JS 动态渲染：每个步骤一张卡片 -->
+        </div>
+
+        <div class="sidebar-foot muted">
+          点击卡片切换；拖拽排序；右上按钮删除/上下移动；⚡ 插入智能指令可自动生成步骤。
+        </div>
+      </div>
+
+      <!-- 下部：当前步骤详情 -->
+      <div class="step-detail-wrapper">
+        <div class="step-detail-head">
+          <span id="step-detail-label">（未选择步骤）</span>
+          <div class="step-detail-actions">
+            <button class="btn btn-sm" id="step-detail-test">🔍 测试</button>
+            <button class="btn btn-sm btn-warn" id="step-detail-delete">🗑 删除</button>
+          </div>
+        </div>
+        <div class="step-detail-body" id="step-detail-body">
+          <div class="muted" style="padding:16px;">
+            从左侧步骤列表中点击一张卡片，在此处编辑该步骤的参数。
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- 3. 浮层与弹窗 -->
+
+  <!-- 3.1 新增步骤类型弹窗 -->
+  <div class="step-modal-mask" id="step-modal-mask" style="display:none;">
+    <div class="step-modal">
+      <div class="step-modal-head">
+        <span>选择新增步骤类型</span>
+        <button class="btn btn-sm" id="step-modal-close" onclick="window.crawlCloseModal()">×</button>
+      </div>
+      <div class="step-modal-body">
+        <div class="step-modal-subtitle">基础步骤</div>
+        <button class="step-type-btn" data-step-type="page_access" onclick="window.crawlAddStep('page_access')">① 页面访问</button>
+        <button class="step-type-btn" data-step-type="list_detect" onclick="window.crawlAddStep('list_detect')">② 列表识别</button>
+        <button class="step-type-btn" data-step-type="detail_jump" onclick="window.crawlAddStep('detail_jump')">③ 详情跳转</button>
+        <button class="step-type-btn" data-step-type="attachment_parse" onclick="window.crawlAddStep('attachment_parse')">④ 附件解析</button>
+        <button class="step-type-btn" data-step-type="field_mapping" onclick="window.crawlAddStep('field_mapping')">⑤ 字段映射</button>
+        <button class="step-type-btn" data-step-type="result_preview" onclick="window.crawlAddStep('result_preview')">⑥ 结果预览</button>
+
+        <div class="step-modal-subtitle" style="margin-top:12px;">智能指令</div>
+        <button class="step-type-btn command-btn" data-step-type="command_list_latest" onclick="window.crawlAddStep('command_list_latest')">🆕 最新 N 条</button>
+        <button class="step-type-btn command-btn" data-step-type="command_list_filter" onclick="window.crawlAddStep('command_list_filter')">🔍 按条件筛选</button>
+        <button class="step-type-btn command-btn" data-step-type="command_extract_table" onclick="window.crawlAddStep('command_extract_table')">📋 表格结构化</button>
+        <button class="step-type-btn command-btn" data-step-type="command_batch_fields" onclick="window.crawlAddStep('command_batch_fields')">📦 批量字段</button>
+        <button class="step-type-btn command-btn" data-step-type="command_regex_extract" onclick="window.crawlAddStep('command_regex_extract')">🔤 正则提取</button>
+        <button class="step-type-btn command-btn" data-step-type="command_pagination_loop" onclick="window.crawlAddStep('command_pagination_loop')">🔁 翻页循环</button>
+        <button class="step-type-btn command-btn" data-step-type="command_scroll_load" onclick="window.crawlAddStep('command_scroll_load')">🔽 滚动加载</button>
+        <button class="step-type-btn command-btn" data-step-type="command_condition_stop" onclick="window.crawlAddStep('command_condition_stop')">🛑 条件终止</button>
+      </div>
+      <div class="step-modal-foot muted">一键应用模板：
+        <button class="btn btn-sm" data-template="gov_notice_list" onclick="window.crawlApplyTemplate('gov_notice_list')">政府公告</button>
+        <button class="btn btn-sm" data-template="enterprise_news" onclick="window.crawlApplyTemplate('enterprise_news')">企业资讯</button>
+        <button class="btn btn-sm" data-template="simple_list_only" onclick="window.crawlApplyTemplate('simple_list_only')">仅列表</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3.2 测试结果浮层 -->
+  <div class="step-test-summary" id="step-test-summary">
+    <h4>📊 测试状态</h4>
+    <div class="muted" id="test-status-text">尚未测试。</div>
+    <div class="test-results" id="test-results"></div>
+  </div>
+
+  <!-- 3.2.1 全链路测试结果浮层 -->
+  <div class="step-modal-mask" id="full-test-modal-mask" style="display:none;">
+    <div class="step-modal" style="max-width:880px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="step-modal-head">
+        <span id="full-test-modal-title">🔗 全链路测试结果</span>
+        <button class="btn btn-sm" onclick="window.crawlCloseFullTest()">×</button>
+      </div>
+      <div class="step-modal-body" id="full-test-modal-body" style="flex:1;overflow:auto;">
+        <div class="muted" style="padding:24px;text-align:center;">正在执行测试...</div>
+      </div>
+      <div class="step-modal-foot muted">
+        <span id="full-test-modal-foot">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3.3 版本管理浮层 -->
+  <div class="step-modal-mask" id="version-modal-mask" style="display:none;">
+    <div class="step-modal" style="max-width:640px;">
+      <div class="step-modal-head">
+        <span>📜 方案历史版本</span>
+        <button class="btn btn-sm" id="version-modal-close" onclick="window.crawlCloseVersions()">×</button>
+      </div>
+      <div class="step-modal-body">
+        <div id="version-modal-list" class="version-list">
+          <div class="muted" style="padding:24px;text-align:center;">（暂无历史版本）</div>
+        </div>
+      </div>
+      <div class="step-modal-foot muted">
+        每次「保存方案」成功后都会记录版本，保留最近 20 条。
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 全局提示 -->
+  <div class="crawl-toast" id="crawl-toast" style="display:none;"></div>
+</div>

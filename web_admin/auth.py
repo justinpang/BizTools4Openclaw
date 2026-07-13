@@ -455,6 +455,11 @@ def role_can_view_menu(role: str, active_key: str) -> bool:
         "spider_bidding": ops_role,
         "spider_company": ops_role,
         "spider_detail": ops_role,
+        # T26/T27/T31: 定制采集可视化页面 + 步骤编排编辑器
+        "crawl_plans": ops_role,
+        "crawl_steps_editor": ops_role,
+        "crawl_monitor": ops_role,
+        "crawl_fields": ops_role,
         "leads": {ROLE_SUPER_ADMIN, ROLE_SALES},
         "channels": {ROLE_SUPER_ADMIN, ROLE_COMPLIANCE},
         "sales": {ROLE_SUPER_ADMIN, ROLE_SALES},

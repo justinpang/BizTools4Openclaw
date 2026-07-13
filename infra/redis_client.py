@@ -184,6 +184,43 @@ class InMemoryRedisStub:
             time.sleep(0.1)
         return None
 
+    # ------ T32 扩展：rpush / llen / lrange / ltrim 支持版本管理 ------
+    def rpush(self, name: str, *values: Any) -> int:
+        with self._lock:
+            lst = self._data.setdefault(name, [])
+            if not isinstance(lst, list):
+                lst = []
+                self._data[name] = lst
+            for v in values:
+                b = v if isinstance(v, bytes) else str(v).encode("utf-8")
+                lst.append(b)
+            return len(lst)
+
+    def llen(self, name: str) -> int:
+        with self._lock:
+            lst = self._data.get(name)
+            return len(lst) if isinstance(lst, list) else 0
+
+    def lrange(self, name: str, start: int, end: int) -> list:
+        with self._lock:
+            lst = self._data.get(name)
+            if not isinstance(lst, list):
+                return []
+            # Python 切片支持负数 end，与 Redis lrange 语义一致
+            if end == -1:
+                return lst[start:]
+            return lst[start:end + 1]
+
+    def ltrim(self, name: str, start: int, end: int) -> None:
+        with self._lock:
+            lst = self._data.get(name)
+            if not isinstance(lst, list):
+                return
+            if end == -1:
+                self._data[name] = lst[start:]
+            else:
+                self._data[name] = lst[start:end + 1]
+
     # ------ 兼容用 ------
     def __getattr__(self, item):  # pragma: no cover
         # 任何未实现的方法返回可调用 stub，避免上游崩

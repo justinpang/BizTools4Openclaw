@@ -146,6 +146,13 @@ try:
             logger.info("startup: Redis/stub ready")
         except Exception as exc:
             logger.warning(f"startup: Redis init warning: {exc}")
+        # 启动任务调度器（用于采集方案定时执行）
+        try:
+            from infra.task_scheduler import TaskScheduler
+            TaskScheduler().start()
+            logger.info("startup: TaskScheduler ready")
+        except Exception as exc:
+            logger.warning(f"startup: TaskScheduler init warning: {exc}")
         yield
         # shutdown: 无额外清理（连接池已由单例管理）
 

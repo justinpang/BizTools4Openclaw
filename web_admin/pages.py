@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -72,10 +74,14 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
                 '</a>'
             )
         if items_html:
+            # 菜单分组支持折叠：group-collapsed 类表示折叠状态
             sidebar_html += (
                 '<div class="menu-group" data-group="' + g["group_key"] + '">'
-                '<div class="menu-group-title"><span class="menu-group-icon">' + g.get("icon", "") + '</span>'
-                '<span>' + g["title"] + '</span></div>'
+                '<div class="menu-group-title" onclick="admin.toggleMenuGroup(\'' + g["group_key"] + '\')">'
+                '<span class="menu-group-icon">' + g.get("icon", "") + '</span>'
+                '<span>' + g["title"] + '</span>'
+                '<span class="menu-group-toggle">▾</span>'
+                '</div>'
                 '<div class="menu-group-items">' + items_html + '</div>'
                 '</div>'
             )
@@ -101,8 +107,11 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '<head>\n'
         '<meta charset="utf-8"/>\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1"/>\n'
+        '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>\n'
+        '<meta http-equiv="Pragma" content="no-cache"/>\n'
+        '<meta http-equiv="Expires" content="0"/>\n'
         '<title>' + title + ' · BizTools4Openclaw 管理后台</title>\n'
-        '<link rel="stylesheet" href="/admin/static/css/admin.css"/>\n'
+        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t33"/>\n'
         '</head>\n'
         '<body class="page-v2 page-' + active_key + '">\n'
         '  <div class="layout-v2">\n'
@@ -140,7 +149,7 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '    </main>\n'
         '  </div>\n'
         '<script id="admin-init-json" type="application/json">' + init_json + '</script>\n'
-        '<script src="/admin/static/js/admin.js"></script>\n'
+        '<script src="/admin/static/js/admin.js?v=t33"></script>\n'
         '</body>\n'
         '</html>\n'
     )
@@ -254,6 +263,7 @@ def _page_title(active_key: str) -> str:
         "data_center_outreach": "客户触达",
         "data_center_sales": "销售闭环",
         "data_center_opportunity": "商机时间线",
+        "crawl_steps_editor": "可视化采集配置编辑器",
         "empty": "空状态演示",
         "403": "权限不足",
     }
@@ -1448,67 +1458,9 @@ def crawl_plans_page(session: dict | None = Depends(get_current_admin)):
         '  <div id="crawl-plans-container">加载中...</div>\n'
         '</section>\n'
         '\n'
-        '<script src="/admin/static/js/crawl_plans.js"></script>\n'
+        '<script src="/admin/static/js/crawl_plans.js?v=t31"></script>\n'
     )
     return _render_with_permission("crawl_plans", "btn.spider.view", body, session)
-
-
-@router.get("/crawl/editor", response_class=HTMLResponse)
-def crawl_editor_page(session: dict | None = Depends(get_current_admin)):
-    """可视化配置编辑器页面（5步向导）"""
-    body = (
-        '<section class="panel">\n'
-        '  <div class="editor-header" style="margin-bottom:15px;">\n'
-        '    <h2 style="margin:0;display:inline-block;">🎨 可视化采集配置编辑器</h2>\n'
-        '    <span id="crawl-step-indicator" style="margin-left:15px;color:#888;font-size:14px;">步骤 1/5</span>\n'
-        '  </div>\n'
-        '\n'
-        '  <!-- 步骤导航 -->\n'
-        '  <div class="crawl-steps" style="display:flex;margin-bottom:20px;background:#f0f4f8;padding:10px;border-radius:6px;">\n'
-        '    <div class="step-item" data-step="1" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;font-weight:bold;color:#1890ff;"><b>①</b> 输入 URL</div>\n'
-        '    <div class="step-item" data-step="2" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>②</b> 列表字段</div>\n'
-        '    <div class="step-item" data-step="3" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>③</b> 详情字段</div>\n'
-        '    <div class="step-item" data-step="4" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-right:1px solid #dde;border-radius:4px;color:#999;"><b>④</b> 附件配置</div>\n'
-        '    <div class="step-item" data-step="5" style="flex:1;text-align:center;padding:8px;cursor:pointer;border-radius:4px;color:#999;"><b>⑤</b> 保存调度</div>\n'
-        '  </div>\n'
-        '\n'
-        '  <!-- 主体：左侧表单 + 右侧预览 -->\n'
-        '  <div class="crawl-editor-layout" style="display:flex;gap:20px;min-height:500px;">\n'
-        '    <!-- 左侧表单区 -->\n'
-        '    <div id="crawl-form-panel" style="flex:1;min-width:380px;padding:15px;background:#fafbfc;border-radius:6px;border:1px solid #e8ecf0;">\n'
-        '      <div id="crawl-step-content" data-current-step="1">\n'
-        '        <p class="muted" style="color:#888;font-size:13px;">配置内容将在选择步骤后动态加载</p>\n'
-        '      </div>\n'
-        '    </div>\n'
-        '\n'
-        '    <!-- 右侧预览区 -->\n'
-        '    <div id="crawl-preview-panel" style="flex:2;padding:15px;background:#fafbfc;border-radius:6px;border:1px solid #e8ecf0;">\n'
-        '      <div id="crawl-preview-status" style="padding:40px;text-align:center;color:#999;">\n'
-        '        🖱 步骤 ① 输入 URL 并点击「预览渲染」查看页面\n'
-        '        <br><br>\n'
-        '        <span style="font-size:12px;">点击预览区中的元素可自动生成 CSS 选择器</span>\n'
-        '      </div>\n'
-        '      <div id="crawl-preview-content" style="display:none;"></div>\n'
-        '      <div id="crawl-preview-samples" style="margin-top:15px;padding:10px;background:white;border-radius:4px;border:1px dashed #ccd;display:none;"></div>\n'
-        '    </div>\n'
-        '  </div>\n'
-        '\n'
-        '  <!-- 底部操作栏 -->\n'
-        '  <div class="crawl-actions" style="margin-top:20px;padding:15px 0;border-top:1px solid #eee;display:flex;justify-content:space-between;">\n'
-        '    <div>\n'
-        '      <button class="btn btn-sm" onclick="crawlEditor.prev()" id="btn-prev">← 上一步</button>\n'
-        '    </div>\n'
-        '    <div>\n'
-        '      <button class="btn btn-sm" onclick="crawlEditor.saveDraft()">保存草稿</button>\n'
-        '      <button class="btn btn-primary btn-sm" onclick="crawlEditor.testRun()">测试运行</button>\n'
-        '      <button class="btn btn-sm" onclick="crawlEditor.next()" id="btn-next">下一步 →</button>\n'
-        '    </div>\n'
-        '  </div>\n'
-        '</section>\n'
-        '\n'
-        '<script src="/admin/static/js/crawl_editor.js"></script>\n'
-    )
-    return _render_with_permission("crawl_editor", "btn.spider.view", body, session)
 
 
 @router.get("/crawl/monitor", response_class=HTMLResponse)
@@ -1549,9 +1501,44 @@ def crawl_fields_page(session: dict | None = Depends(get_current_admin)):
         '  <div id="crawl-field-categories" style="margin-bottom:20px;">加载中...</div>\n'
         '\n'
         '  <!-- 字段列表 -->\n'
-        '  <div id="crawl-fields-list">加载中...</div>\n'
+        '<div id="crawl-fields-list">加载中...</div>\n'
         '</section>\n'
         '\n'
         '<script src="/admin/static/js/crawl_fields.js"></script>\n'
     )
     return _render_with_permission("crawl_fields", "btn.spider.view", body, session)
+
+
+# ============================================================================
+# T31: 可视化采集配置编辑器（原子化步骤向导 + 三栏布局）
+# 入口: /admin/crawl/steps-editor 或 /admin/crawl/steps-editor?plan_id=xxx
+# ============================================================================
+
+@router.get("/crawl/steps-editor", response_class=HTMLResponse)
+def crawl_steps_editor_page(session: dict | None = Depends(get_current_admin)):
+    partials_path = Path(__file__).parent / "templates" / "partials" / "crawl_step_editor.html"
+    try:
+        partial_html = partials_path.read_text(encoding="utf-8")
+    except Exception:
+        partial_html = (
+            '<section class="panel"><h3>⚠ 编辑器模板未找到</h3>'
+            '<p class="muted">未能加载 templates/partials/crawl_step_editor.html。请检查文件存在性和权限。</p>'
+            '</section>'
+        )
+    body = (
+        '<section class="panel">\n'
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">\n'
+        '    <h2 style="margin:0;">🧩 可视化采集配置编辑器</h2>\n'
+        '    <div>\n'
+        '      <a class="btn btn-primary" href="/admin/crawl/steps-editor">新建方案</a>\n'
+        '      <span class="muted"> 可通过 URL 参数 plan_id=xxx 打开旧方案进行编辑/自动转换</span>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</section>\n'
+        '\n'
+        + partial_html
+        + '\n'
+        '<script src="/admin/static/js/crawl_step_editor.js?v=t33"></script>\n'
+        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t33"/>\n'
+    )
+    return _render_with_permission("crawl_steps_editor", "btn.spider.view", body, session)

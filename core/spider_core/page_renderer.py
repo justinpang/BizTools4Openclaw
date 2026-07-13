@@ -157,6 +157,36 @@ def _parse_html(html: str, page: RenderedPage) -> None:
                 attrs=attrs,
             ))
 
+        # <iframe>/<embed>/<object> —— 嵌入式文档（PDF/Word/图片预览）
+        for el in soup.find_all(["iframe", "embed", "object"]):
+            el_name = el.name or ""
+            attrs = {str(k): str(v) for k, v in el.attrs.items()}
+            src = (attrs.get("src") or attrs.get("data") or "").strip()
+            if not src:
+                continue
+            # 尝试识别 PDF.js 查看器并抽取真实 PDF 路径
+            real_pdf = ""
+            if "pdfjs" in src.lower() or "viewer" in src.lower():
+                from urllib.parse import urlparse, parse_qs
+                try:
+                    parsed = urlparse(src)
+                    qs = parse_qs(parsed.query)
+                    for key in ("file", "src", "url"):
+                        if key in qs and qs[key]:
+                            real_pdf = qs[key][0]
+                            break
+                except Exception:
+                    pass
+            display_src = real_pdf or src
+            # 识别文件类型给出可读文本
+            ext = display_src.split("?")[0].split(".")[-1].lower() if "." in display_src else ""
+            file_type = ext.upper() if ext in ("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "txt") else (el_name.upper() + " 嵌入文档")
+            page.links.append(Link(
+                text=f"【{file_type}】附件 / 嵌入式文档 {('-' + display_src[-60:] if display_src else '')}",
+                href=display_src,
+                attrs=attrs,
+            ))
+
         # <img> 图片
         for img in soup.find_all("img"):
             attrs = {str(k): str(v) for k, v in img.attrs.items()}
@@ -213,8 +243,10 @@ class SmartPageRenderer:
         self,
         url: str,
         *,
+        render: bool = False,
         render_js: bool = False,
-        timeout: float = 30.0,
+        timeout: float = 45.0,
+        wait_until: str = "networkidle",
         robot_check: bool = True,
         risk_check: bool = True,
         task_id: Optional[str] = None,
@@ -224,7 +256,10 @@ class SmartPageRenderer:
         try:
             resp = self._sdk.get(
                 url,
-                render=render_js,
+                render=render,
+                render_js=render_js,
+                render_wait_until=wait_until,
+                render_timeout=timeout,
                 timeout=timeout,
                 robot_check=robot_check,
                 risk_check=risk_check,
@@ -261,6 +296,35 @@ def get_renderer() -> SmartPageRenderer:
     return _default_renderer
 
 
+def render_page(url: str, *, wait_ms: int = 8000, timeout: float = 45.0,
+                 render_js: bool = True) -> Dict[str, Any]:
+    """渲染单个 URL 页面并返回 dict（html / title / status_code / final_url）。
+
+    专供 web_admin 可视化编辑器调用。默认启用 JS 渲染，以便支持
+    由 JavaScript 动态生成的列表/表格等内容。
+    """
+    page = get_renderer().render(
+        url,
+        render=True,
+        render_js=render_js,
+        timeout=timeout,
+        wait_until="networkidle",
+        robot_check=False,
+        risk_check=False,
+    )
+    return {
+        "html": page.html or "",
+        "title": page.title or "",
+        "status_code": page.status_code or 0,
+        "final_url": page.final_url or url,
+        "links": [{"text": getattr(link, "text", ""),
+                   "href": getattr(link, "href", "")}
+                  for link in page.links[:200]],
+        "error": page.error or "",
+        "elapsed_ms": page.elapsed_ms,
+    }
+
+
 __all__ = [
     "Link",
     "Image",
@@ -269,4 +333,5 @@ __all__ = [
     "RenderedPage",
     "SmartPageRenderer",
     "get_renderer",
+    "render_page",
 ]
