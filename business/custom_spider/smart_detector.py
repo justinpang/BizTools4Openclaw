@@ -209,41 +209,41 @@ class SmartDetector:
     def _detect_containers(self, soup: Any) -> List[_ContainerScore]:
         """在 DOM 中寻找若干候选列表容器。
 
-        思路：
-        - 对所有 ``<ul>``, ``<ol>``, ``<table>``, ``<div>`` 计算其直接子节点数量 + 文本长度 + 链接密度
-        - 综合得分排序，取 Top N（当前 3）
+        多策略探测：
+        - 策略 A：直接子节点为多个 <a>/<li>/<div>
+        - 策略 B：直接子节点含链接的 div/ul/ol
         """
         candidates: List[_ContainerScore] = []
-        tags_to_try = ["ul", "ol", "table", "div"]
 
+        # ---- 策略 A：查找多子节点的容器
+        tags_to_try = ["ul", "ol", "table", "div", "section", "article"]
         for tag_name in tags_to_try:
             for el in soup.find_all(tag_name):
-                # 只看直接子节点数量（同级条目）
                 children = [c for c in el.children if isinstance(c, Tag)]
                 if len(children) < 2:
-                    continue  # 条目太少不认为是列表
+                    continue
 
                 item_count = len(children)
 
-                # 平均文本长度（过滤掉空白）
+                # 平均文本长度
                 total_text = 0
                 for c in children:
                     text = (c.get_text(" ", strip=True) or "").strip()
                     total_text += len(text)
                 avg_text_len = total_text / max(1, item_count)
 
-                # 链接密度 = 含 <a> 的子节点数 / 总子节点数
+                # 链接密度
                 link_count = sum(1 for c in children if c.find("a"))
                 link_density = link_count / max(1, item_count)
 
-                # 打分 — 加权归一
+                # 加权评分
                 score = (
                     min(item_count, 50) / 50.0 * 0.35
                     + min(avg_text_len, 200) / 200.0 * 0.35
                     + link_density * 0.30
                 )
 
-                # 构造选择器 — 用标签名 + class 更稳定
+                # 用标签 + class 构造选择器
                 cls = el.get("class")
                 cls_sel = "." + ".".join(cls) if cls else ""
                 selector = f"{tag_name}{cls_sel}"
@@ -256,6 +256,42 @@ class SmartDetector:
                     score=score,
                 ))
 
+        # ---- 策略 B：从 <a> 标签反向探测其所属父容器
+        try:
+            for a_tag in soup.find_all("a"):
+                parent = a_tag.parent
+                if parent is None:
+                    continue
+                p_tag = parent.name
+                if p_tag is None:
+                    continue
+                if str(p_tag).lower() in ["ul", "ol", "table", "div", "li"]:
+                    continue
+                p_children = [c for c in parent.children if isinstance(c, Tag)]
+                if len(p_children) < 2:
+                    continue
+                p_parent_text = parent.get_text(" ", strip=True) or ""
+                p_parent_link_count = sum(1 for c in p_children if c.find("a"))
+                p_parent_link_density = p_parent_link_count / max(1, len(p_children))
+                p_parent_avg_text = len(p_parent_text) / max(1, len(p_children))
+                p_parent_score = (
+                    min(len(p_children), 50) / 50.0 * 0.35
+                    + min(p_parent_avg_text, 200) / 200.0 * 0.35
+                    + p_parent_link_density * 0.30
+                )
+                p_parent_cls = parent.get("class")
+                p_parent_cls_sel = "." + ".".join(p_parent_cls) if p_parent_cls else ""
+                p_parent_selector = f"{p_tag}{p_parent_cls_sel}"
+                candidates.append(_ContainerScore(
+                    selector=p_parent_selector,
+                    item_count=len(p_children),
+                    avg_text_len=p_parent_avg_text,
+                    link_density=p_parent_link_density,
+                    score=p_parent_score,
+                ))
+        except Exception:
+            pass
+
         # 去重（相同 selector 的多次结果合并）
         dedup: Dict[str, _ContainerScore] = {}
         for c in candidates:
@@ -266,14 +302,43 @@ class SmartDetector:
 
     # ------------------------------------------------------------ 工具：按选择器找条目子节点
     def _find_item_nodes(self, soup: Any, selector: str) -> List[Any]:
-        """给定形如 ``ul.item-list`` 的选择器，返回容器下的直接子条目节点。"""
-        try:
-            container = soup.select_one(selector) if soup else None
-        except Exception:
-            container = None
-        if container is None:
+        """给定形如 ``ul.item-list`` 的选择器，返回容器下的直接子条目节点。
+
+        改进：
+        - 对多个匹配的容器都取其直接子节点
+        - 对像 div > div.wrap > div.item 这样的嵌套结构也能拿到条目
+        """
+        if not selector or not soup:
             return []
-        return [c for c in container.children if isinstance(c, Tag)]
+        try:
+            containers = soup.select(selector)
+        except Exception:
+            containers = []
+        if not containers:
+            return []
+
+        all_children: List[Any] = []
+        for container in containers:
+            if not container:
+                continue
+            # 直接子节点
+            children = [c for c in container.children if isinstance(c, Tag)]
+            if children:
+                all_children.extend(children)
+                continue
+            # 回退：找容器内的 li/a/div/article 等条目
+            for tag_name in ["li", "a", "article", "div", "tr", "span"]:
+                more = container.find_all(tag_name, recursive=False)
+                if more:
+                    all_children.extend([c for c in more if isinstance(c, Tag)])
+                    break
+            # 再回退：下一层递归查找
+            if not all_children:
+                for c in container.children:
+                    if isinstance(c, Tag):
+                        sub_children = [sc for sc in c.children if isinstance(sc, Tag)]
+                        all_children.extend(sub_children)
+        return all_children
 
     # ------------------------------------------------------------ 阶段 2: 时间字段识别（在条目内）
     def _detect_time_fields(self, item_nodes: List[Any]) -> List[_TimeField]:
@@ -342,30 +407,43 @@ class SmartDetector:
     def _extract_items(self, item_nodes: List[Any], time_field: Optional[_TimeField]) -> List[_ListItem]:
         items: List[_ListItem] = []
         for idx, node in enumerate(item_nodes):
-            # 标题：取第一个 <a> 的文本；若不存在，取节点的前 80 个字符
-            a = node.find("a") if isinstance(node, Tag) else None
+            if not isinstance(node, Tag):
+                continue
+
             title = ""
             link = ""
-            if a is not None:
-                title = (a.get_text(strip=True) or "").strip()
-                link = (a.get("href") or "").strip()
-            if not title and isinstance(node, Tag):
-                title = (node.get_text(" ", strip=True) or "").strip()[:120]
+
+            # 如果 node 本身就是 <a>，直接取它的文本和 href
+            if node.name == "a":
+                title = (node.get_text(" ", strip=True) or "").strip()
+                link = (node.get("href") or "").strip()
+            else:
+                # 否则尝试找第一个 <a>
+                a = node.find("a")
+                if a is not None and hasattr(a, "get_text"):
+                    title = (a.get_text(" ", strip=True) or "").strip()
+                    link = (a.get("href") or "").strip()
+                # 如果 <a> 没有有效文本，使用整个节点的文本作为标题
+                if not title:
+                    title = (node.get_text(" ", strip=True) or "").strip()[:120]
+
+            # 过滤掉完全空白的记录
+            if not title and not link:
+                continue
 
             # 时间：优先在节点内搜索时间模式
             raw_time = ""
             parsed_time: Optional[datetime] = None
-            if isinstance(node, Tag):
-                node_text = node.get_text(" ", strip=True) or ""
-                for pat, fmt in _TIME_PATTERNS:
-                    m = pat.search(node_text)
-                    if m:
-                        raw_time = m.group(0).strip()
-                        try:
-                            parsed_time = datetime.strptime(self._normalize_to_fmt(raw_time, fmt), fmt)
-                        except Exception:
-                            parsed_time = None
-                        break
+            node_text = node.get_text(" ", strip=True) or ""
+            for pat, fmt in _TIME_PATTERNS:
+                m = pat.search(node_text)
+                if m:
+                    raw_time = m.group(0).strip()
+                    try:
+                        parsed_time = datetime.strptime(self._normalize_to_fmt(raw_time, fmt), fmt)
+                    except Exception:
+                        parsed_time = None
+                    break
 
             items.append(_ListItem(
                 title=title, link=link, raw_time=raw_time,

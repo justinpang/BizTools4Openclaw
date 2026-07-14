@@ -111,7 +111,7 @@ def _layout_v2(title: str, active_key: str, body_html: str, session: dict | None
         '<meta http-equiv="Pragma" content="no-cache"/>\n'
         '<meta http-equiv="Expires" content="0"/>\n'
         '<title>' + title + ' · BizTools4Openclaw 管理后台</title>\n'
-        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t33"/>\n'
+        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t34"/>\n'
         '</head>\n'
         '<body class="page-v2 page-' + active_key + '">\n'
         '  <div class="layout-v2">\n'
@@ -257,8 +257,6 @@ def _page_title(active_key: str) -> str:
         "notifications": "消息中心",
         "data_center_dashboard": "全链路漏斗看板",
         "data_center_collection": "采集阶段",
-        "data_center_cleaning": "清洗结构化",
-        "data_center_compliance": "合规校验",
         "data_center_grading": "商机分级",
         "data_center_outreach": "客户触达",
         "data_center_sales": "销售闭环",
@@ -946,27 +944,21 @@ def data_center_dashboard_page(session: dict | None = Depends(get_current_admin)
         '  <div class="stat-card"><div class="label">✅ 已成交</div><div class="value" id="v-won">0</div></div>',
         '</section>',
 
-        # 2) 6 阶段漏斗图
+        # 2) 漏斗图
         '<section class="panel">',
-        '  <h3>[图表] 全链路漏斗（六阶段）</h3>',
+        '  <h3>[图表] 全链路漏斗（5阶段）</h3>',
         '  <div class="row" style="gap:8px;margin-bottom:12px;">',
         '    <button class="btn btn-sm" onclick="admin.loadFunnelChart()">刷新漏斗</button>',
         '  </div>',
         '  <div id="funnel-chart" class="funnel-chart"><div class="empty-inline">漏斗数据加载中...</div></div>',
         '</section>',
 
-        # 3) 6 阶段快速入口卡片
+        # 3) 阶段快速入口卡片
         '<section class="panel">',
-        '  <h3>[文件夹] 六阶段快速入口</h3>',
+        '  <h3>[文件夹] 阶段快速入口</h3>',
         '  <div class="channel-cards" id="stage-cards">',
         '    <a class="channel-card" href="/admin/data_center/collection">',
-        '      <span class="channel-icon">[爬虫]</span><span class="channel-title">采集阶段</span><span class="channel-desc">爬虫任务与抓取条目</span>',
-        '    </a>',
-        '    <a class="channel-card" href="/admin/data_center/cleaning">',
-        '      <span class="channel-icon">[清洗]</span><span class="channel-title">清洗结构化</span><span class="channel-desc">结构化、校验后的商机</span>',
-        '    </a>',
-        '    <a class="channel-card" href="/admin/data_center/compliance">',
-        '      <span class="channel-icon">[合规]</span><span class="channel-title">合规校验</span><span class="channel-desc">敏感信息检测 + 风险评分</span>',
+        '      <span class="channel-icon">[爬虫]</span><span class="channel-title">采集阶段</span><span class="channel-desc">采集方案管理 + 结构化数据</span>',
         '    </a>',
         '    <a class="channel-card" href="/admin/data_center/grading">',
         '      <span class="channel-icon">[分级]</span><span class="channel-title">商机分级</span><span class="channel-desc">A/B/C/D 等级 + 综合评分</span>',
@@ -1074,13 +1066,85 @@ def _stage_detail_page_body(stage_key: str, stage_title: str, stage_desc: str,
 
 @router.get("/data_center/collection", response_class=HTMLResponse)
 def data_center_collection_page(session: dict | None = Depends(get_current_admin)):
-    """采集阶段：爬虫任务 + 已抓取条目"""
-    body = _stage_detail_page_body(
-        stage_key="collection",
-        stage_title="采集阶段",
-        stage_desc="爬虫任务 + 抓取条目",
-        table_headers=["任务ID", "任务名称", "渠道", "状态", "已抓取", "失败", "创建时间"],
-        body_id="dc-collection",
+    """采集阶段：采集方案管理 + 结构化数据"""
+    body = (
+        # 顶部统计卡片
+        '<section class="stats-grid" id="dc-collection-stats">\n'
+        '  <div class="stat-card"><div class="label">📂 采集方案数</div><div class="value" id="dc-stat-plans">0</div></div>\n'
+        '  <div class="stat-card"><div class="label">▶️ 运行中</div><div class="value" id="dc-stat-active">0</div></div>\n'
+        '  <div class="stat-card"><div class="label">📊 累计采集条数</div><div class="value" id="dc-stat-items">0</div></div>\n'
+        '  <div class="stat-card"><div class="label">🕓 近24小时新增</div><div class="value" id="dc-stat-recent">0</div></div>\n'
+        '</section>\n'
+        # 方案管理区
+        '<section class="panel">\n'
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">\n'
+        '    <h2 style="margin:0;">🕷 采集阶段 — 采集方案管理</h2>\n'
+        '    <div>\n'
+        '      <button class="btn btn-primary" onclick="dcCollection.openEditor()">+ 新建方案</button>\n'
+        '      <button class="btn" onclick="dcCollection.refresh()">🔄 刷新</button>\n'
+        '    </div>\n'
+        '  </div>\n'
+        # 筛选栏
+        '  <div class="crawl-filter" style="margin-bottom:15px;padding:10px;background:#f7f9fc;border-radius:6px;">\n'
+        '    <input type="text" id="dc-collection-keyword" placeholder="搜索方案名称/域名..." style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;" />\n'
+        '    <select id="dc-collection-status" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;">\n'
+        '      <option value="">全部状态</option>\n'
+        '      <option value="draft">草稿</option>\n'
+        '      <option value="active">运行中</option>\n'
+        '      <option value="paused">已暂停</option>\n'
+        '    </select>\n'
+        '    <button class="btn btn-sm" onclick="dcCollection.loadPlans()">筛选</button>\n'
+        '  </div>\n'
+        # 方案列表
+        '  <div id="dc-collection-plans">加载中...</div>\n'
+        '</section>\n'
+        # 方案详情区（默认隐藏，点击方案后显示）
+        '<section class="panel" id="dc-collection-detail-section" style="display:none;">\n'
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">\n'
+        '    <h3 style="margin:0;" id="dc-detail-title">方案详情</h3>\n'
+        '    <button class="btn btn-sm" onclick="dcCollection.closeDetail()">✕ 关闭</button>\n'
+        '  </div>\n'
+        # 详情 tab
+        '  <div style="border-bottom:1px solid #e8ecf0;margin-bottom:15px;">\n'
+        '    <div style="display:flex;gap:20px;">\n'
+        '      <a href="javascript:void(0)" class="dc-detail-tab active" data-tab="runs" onclick="dcCollection.switchTab(\'runs\')">📋 运行记录</a>\n'
+        '      <a href="javascript:void(0)" class="dc-detail-tab" data-tab="data" onclick="dcCollection.switchTab(\'data\')">📊 结构化数据</a>\n'
+        '      <a href="javascript:void(0)" class="dc-detail-tab" data-tab="steps" onclick="dcCollection.switchTab(\'steps\')">🔧 步骤配置</a>\n'
+        '    </div>\n'
+        '  </div>\n'
+        # 运行记录 tab
+        '  <div id="dc-tab-runs" class="dc-tab-content">\n'
+        '    <div id="dc-run-list" style="max-height:500px;overflow-y:auto;">加载中...</div>\n'
+        '  </div>\n'
+        # 结构化数据 tab
+        '  <div id="dc-tab-data" class="dc-tab-content" style="display:none;">\n'
+        '    <div id="dc-data-list">请选择一条运行记录查看结构化数据</div>\n'
+        '  </div>\n'
+        # 步骤配置 tab
+        '  <div id="dc-tab-steps" class="dc-tab-content" style="display:none;">\n'
+        '    <div id="dc-steps-view">点击「编辑方案」查看或修改步骤配置</div>\n'
+        '  </div>\n'
+        '</section>\n'
+        # 样式
+        '<style>\n'
+        '  .dc-plan-card { border:1px solid #e8ecf0;border-radius:8px;padding:16px;margin-bottom:12px;background:#fff;transition:all 0.2s; }\n'
+        '  .dc-plan-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.08);border-color:#1890ff; }\n'
+        '  .dc-plan-card-header { display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px; }\n'
+        '  .dc-plan-card-title { font-size:16px;font-weight:bold;margin:0; }\n'
+        '  .dc-plan-card-domain { font-size:12px;color:#666;margin-top:4px; }\n'
+        '  .dc-plan-card-stats { display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px; }\n'
+        '  .dc-plan-stat { text-align:center;padding:8px;background:#f7f9fc;border-radius:6px; }\n'
+        '  .dc-plan-stat-label { font-size:12px;color:#666;margin-bottom:4px; }\n'
+        '  .dc-plan-stat-value { font-size:18px;font-weight:bold;color:#1890ff; }\n'
+        '  .dc-plan-card-actions { display:flex;gap:8px;justify-content:flex-end; }\n'
+        '  .dc-detail-tab { padding:10px 0;border-bottom:2px solid transparent;cursor:pointer;color:#666;text-decoration:none; }\n'
+        '  .dc-detail-tab.active { color:#1890ff;border-bottom-color:#1890ff;font-weight:bold; }\n'
+        '  .dc-run-item { padding:10px;border:1px solid #e8ecf0;border-radius:6px;margin-bottom:8px;cursor:pointer;transition:all 0.2s; }\n'
+        '  .dc-run-item:hover { background:#f0f7ff;border-color:#91d5ff; }\n'
+        '  .dc-run-item.active { background:#e6f7ff;border-color:#1890ff; }\n'
+        '</style>\n'
+        # 脚本
+        '<script src="/admin/static/js/dc_collection.js?v=1"></script>\n'
     )
     return _render_with_permission("data_center_collection", "btn.data_center.view", body, session)
 
@@ -1433,7 +1497,7 @@ __all__ = ["router"]
 
 @router.get("/crawl/plans", response_class=HTMLResponse)
 def crawl_plans_page(session: dict | None = Depends(get_current_admin)):
-    """采集方案管理列表页"""
+    """采集方案管理列表页（带执行详情区块）"""
     body = (
         '<section class="panel">\n'
         '  <div class="crawl-plans-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">\n'
@@ -1444,6 +1508,35 @@ def crawl_plans_page(session: dict | None = Depends(get_current_admin)):
         '      <button class="btn" onclick="crawlPlans.refresh()">🔄 刷新</button>\n'
         '    </div>\n'
         '  </div>\n'
+        # ---------- 可折叠的方案执行详情区块 ----------
+        '  <div class="crawl-execution-detail" style="margin-bottom:20px;border:1px solid #e0e5eb;border-radius:6px;background:#f7f9fc;">\n'
+        '    <div class="crawl-detail-header" onclick="crawlPlans.toggleDetail()" style="cursor:pointer;padding:10px 14px;background:#e8f0fe;color:#1967d2;font-weight:bold;border-radius:6px 6px 0 0;">\n'
+        '      <span id="crawl-detail-toggle-icon">▶</span> 方案执行详情（步骤级：输入/输出/状态/耗时） <span class="muted" style="font-weight:normal;">— 点击展开/折叠</span>\n'
+        '    </div>\n'
+        '    <div id="crawl-detail-content" style="display:none;padding:12px;">\n'
+        # 第一行：方案选择
+        '      <div style="margin-bottom:10px;">\n'
+        '        <label style="margin-right:10px;">选择方案：</label>\n'
+        '        <select id="crawl-detail-plan-select" onchange="crawlPlans.loadPlanDetail()" style="padding:6px 10px;min-width:250px;">\n'
+        '          <option value="">-- 先加载方案列表 --</option>\n'
+        '        </select>\n'
+        '        <button class="btn btn-sm" onclick="crawlPlans.loadPlanDetail()">刷新</button>\n'
+        '      </div>\n'
+        # 第二行：左侧运行列表 + 右侧步骤详情
+        '      <div style="display:flex;gap:12px;">\n'
+        # 左侧：运行记录列表（倒序）
+        '        <div id="crawl-detail-run-list" style="width:280px;max-height:400px;overflow-y:auto;border:1px solid #e0e5eb;border-radius:6px;background:#fff;padding:8px;">\n'
+        '          <div style="font-size:12px;color:#666;margin-bottom:8px;">运行记录（倒序）</div>\n'
+        '          <div class="muted" style="font-size:12px;text-align:center;padding:20px;">选择方案后显示运行记录</div>\n'
+        '        </div>\n'
+        # 右侧：步骤详情
+        '        <div id="crawl-detail-run-detail" style="flex:1;border:1px solid #e0e5eb;border-radius:6px;background:#fff;padding:12px;min-height:200px;">\n'
+        '          <div class="muted" style="font-size:12px;text-align:center;padding:40px;">点击左侧运行记录查看步骤详情</div>\n'
+        '        </div>\n'
+        '      </div>\n'
+        '    </div>\n'
+        '  </div>\n'
+        # ---------- 原筛选 + 列表 ----------
         '  <div class="crawl-filter" style="margin-bottom:15px;padding:10px;background:#f7f9fc;border-radius:6px;">\n'
         '    <input type="text" id="crawl-keyword" placeholder="搜索方案名称/域名..." style="width:200px;padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;" />\n'
         '    <select id="crawl-status" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;margin-right:10px;">\n'
@@ -1458,7 +1551,7 @@ def crawl_plans_page(session: dict | None = Depends(get_current_admin)):
         '  <div id="crawl-plans-container">加载中...</div>\n'
         '</section>\n'
         '\n'
-        '<script src="/admin/static/js/crawl_plans.js?v=t31"></script>\n'
+        '<script src="/admin/static/js/crawl_plans.js?v=t32"></script>\n'
     )
     return _render_with_permission("crawl_plans", "btn.spider.view", body, session)
 
@@ -1538,7 +1631,7 @@ def crawl_steps_editor_page(session: dict | None = Depends(get_current_admin)):
         '\n'
         + partial_html
         + '\n'
-        '<script src="/admin/static/js/crawl_step_editor.js?v=t33"></script>\n'
-        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t33"/>\n'
+        '<script src="/admin/static/js/crawl_step_editor.js?v=t35"></script>\n'
+        '<link rel="stylesheet" href="/admin/static/css/admin.css?v=t34"/>\n'
     )
     return _render_with_permission("crawl_steps_editor", "btn.spider.view", body, session)

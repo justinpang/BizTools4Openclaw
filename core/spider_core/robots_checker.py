@@ -48,6 +48,13 @@ class RobotsChecker:
         try:
             parser.set_url(robots_url)
             parser.read()
+            # HTTP 401 / 403 时，RobotFileParser 会把 disallow_all 设为 True，
+            # 并不抛异常，这种情况应视为"读取失败"，回退到 permissive 模式
+            if getattr(parser, "disallow_all", False):
+                logger.warning(
+                    f"robots.txt 返回 401/403（disallow_all），视为读取失败并回退: {robots_url}"
+                )
+                parser = _permissive_parser()
         except Exception as exc:
             logger.warning(f"robots.txt 读取失败 ({robots_url}: {exc}")
             # 失败时视为"允许全部"，但不缓存，下次重新拉取

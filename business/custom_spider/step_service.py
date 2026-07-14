@@ -1076,12 +1076,22 @@ class StepTester:
         # 1. config 中显式设置
         if config.get("base_url"):
             base_url = str(config["base_url"])
-        # 2. 从 upstream_data 顶层取
+        # 2. 从 upstream_data 顶层取（多种可能的字段名）
         if not base_url and isinstance(upstream_data, dict):
-            if upstream_data.get("url"):
-                base_url = str(upstream_data["url"])
-            elif upstream_data.get("final_url"):
-                base_url = str(upstream_data["final_url"])
+            for key in ("base_href", "url", "final_url", "source_url", "page_url"):
+                val = upstream_data.get(key)
+                if val:
+                    base_url = str(val)
+                    break
+        # 3. 从 page_html 中提取 <base href>
+        if not base_url and page_html:
+            try:
+                import re
+                m = re.search(r'<base[^>]+href=["\']([^"\']+)["\']', page_html, re.IGNORECASE)
+                if m:
+                    base_url = m.group(1)
+            except Exception:
+                pass
 
         # 从上游 detail_jump 产出的 items 中收集附件 URL
         upstream_items = upstream_data.get("items") or []
@@ -1268,29 +1278,48 @@ class StepTester:
         mapped = []
 
         def _path_eval(root, path: str) -> str:
-            """解析像 "[0].tables[0].rows[1][2]" 这样的路径。"""
+            """解析像 "[0].tables[0].rows[1][2]" 或 "[0].tables[*].rows[1][2]" 这样的路径。
+            
+            支持通配符 *：表示遍历列表所有元素，收集结果后用换行符连接。
+            """
             parts = path.replace("[", ".").replace("]", "").split(".")
             parts = [p for p in parts if p]
             cur: Any = root
-            for p in parts:
-                if isinstance(cur, list):
+            
+            def _eval(current, remaining_parts):
+                if not remaining_parts:
+                    return str(current) if current is not None else ""
+                p = remaining_parts[0]
+                rest = remaining_parts[1:]
+                
+                if isinstance(current, list):
+                    if p == "*":
+                        results = []
+                        for item in current:
+                            if item:
+                                val = _eval(item, rest)
+                                if val:
+                                    results.append(val)
+                        return "\n".join(results) if results else ""
                     try:
                         idx = int(p)
-                        cur = cur[idx] if 0 <= idx < len(cur) else ""
+                        if 0 <= idx < len(current):
+                            return _eval(current[idx], rest)
+                        return ""
                     except (ValueError, IndexError):
                         return ""
-                elif isinstance(cur, dict):
-                    cur = cur.get(p, "")
+                elif isinstance(current, dict):
+                    return _eval(current.get(p, ""), rest)
                 else:
                     try:
                         idx = int(p)
-                        if hasattr(cur, "__getitem__"):
-                            cur = cur[idx]
-                        else:
-                            return ""
+                        if hasattr(current, "__getitem__"):
+                            return _eval(current[idx], rest)
+                        return ""
                     except (ValueError, IndexError, TypeError):
                         return ""
-            return str(cur) if cur is not None else ""
+            
+            return _eval(cur, parts)
 
         def _resolve_source(source: str, src_item: dict, *, row_idx: int = -1) -> str:
             """解析单个 source 值。row_idx >= 0 时，将 [row] 替换为该行号。"""
@@ -1300,10 +1329,35 @@ class StepTester:
             # 固定值
             if source.startswith("="):
                 return source[1:]
-            # 处理 [row] 占位符：替换为实际行号字符串
+            
+            import re as _re_rs
             effective_source = source
+            
+            # 向后兼容：如果使用 tables[0].rows[row][N] 且附件有多个表格，自动转换为 merged_rows[row][N]
+            # 这是为了修复用户已保存的旧配置只识别第一页表格的问题
+            m_old_style = _re_rs.search(r"attachments\[(\d+)\]\.tables\[0\]\.rows\[row\]\[(\d+)\]", effective_source)
+            if m_old_style:
+                a_idx = int(m_old_style.group(1))
+                c_idx = m_old_style.group(2)
+                if (a_idx < len(attachment_results)
+                        and isinstance(attachment_results[a_idx], dict)):
+                    tables = attachment_results[a_idx].get("tables") or []
+                    merged_rows = attachment_results[a_idx].get("merged_rows") or []
+                    if len(tables) > 1 and merged_rows:
+                        effective_source = f"attachments[{a_idx}].merged_rows[row][{c_idx}]"
+            
+            # 处理 [row] 占位符：替换为实际行号字符串
             if "[row]" in effective_source and row_idx >= 0:
                 effective_source = effective_source.replace("[row]", f"[{row_idx}]")
+            
+            # 将 tables[*].rows[row_idx][N] 转换为 merged_rows[row_idx][N]
+            m_tables_star = _re_rs.search(r"attachments\[(\d+)\]\.tables\[\*\]\.rows\[(\d+)\]\[(\d+)\]", effective_source)
+            if m_tables_star:
+                a_idx = m_tables_star.group(1)
+                r_idx = m_tables_star.group(2)
+                c_idx = m_tables_star.group(3)
+                effective_source = f"attachments[{a_idx}].merged_rows[{r_idx}][{c_idx}]"
+            
             # items 路径
             if effective_source.startswith("items["):
                 try:
@@ -1326,9 +1380,10 @@ class StepTester:
         row_marker_sources = [s for s in map_dict.values()
                               if isinstance(s, str) and "[row]" in s]
         if row_marker_sources and attachment_results:
-            # 两种 source 格式都支持：
+            # 三种 source 格式都支持：
             #   a) attachments[X].merged_rows[row][N]   → 遍历所有表格合并后的行（推荐）
             #   b) attachments[X].tables[Y].rows[row][N] → 遍历某个 table 的行
+            #   c) attachments[X].tables[0].rows[row][N] 且有多个表格 → 自动升级为 merged_rows（向后兼容）
             first_row_src = row_marker_sources[0]
             target_rows = None
             try:
@@ -1339,6 +1394,17 @@ class StepTester:
                     if (a_idx < len(attachment_results)
                             and isinstance(attachment_results[a_idx], dict)):
                         target_rows = attachment_results[a_idx].get("merged_rows") or None
+                # 格式 c: tables[0].rows[row][N] 向后兼容
+                if target_rows is None:
+                    m_old_style = _re_mapping.search(r"attachments\[(\d+)\]\.tables\[0\]\.rows\[row\]", first_row_src)
+                    if m_old_style:
+                        a_idx = int(m_old_style.group(1))
+                        if (a_idx < len(attachment_results)
+                                and isinstance(attachment_results[a_idx], dict)):
+                            tables = attachment_results[a_idx].get("tables") or []
+                            merged_rows = attachment_results[a_idx].get("merged_rows") or []
+                            if len(tables) > 1 and merged_rows:
+                                target_rows = merged_rows
                 # 格式 b: 具体 tables[Y]
                 if target_rows is None:
                     m_table = _re_mapping.search(r"attachments\[(\d+)\]\.tables\[(\*|\d+)\]", first_row_src)
@@ -1436,7 +1502,7 @@ class StepTester:
         elif upstream_data.get("results"):
             attachments_to_show = upstream_data.get("results") or []
         
-        sample_size = int(config.get("sample_size") or 20)
+        sample_size = int(config.get("preview_count") or config.get("sample_size") or 10)
         items_sample = items_to_show[:sample_size] if isinstance(items_to_show, list) else []
         attachments_sample = attachments_to_show[:5] if isinstance(attachments_to_show, list) else []
         
@@ -1457,29 +1523,20 @@ class StepTester:
 
     # ------------------------------------------------------------ 全链路
     @staticmethod
-    def run_all(package: StepsPackage, preloaded_html: Optional[str] = None) -> Dict[str, Any]:
+    def run_all(package: StepsPackage, preloaded_html: Optional[str] = None, max_items: Optional[int] = None) -> Dict[str, Any]:
         results: List[Dict[str, Any]] = []
-        # 累积数据：从前面所有步骤收集，而不仅仅是上一步
         accumulated: Dict[str, Any] = {}
         last_output: Dict[str, Any] = {}
         final_items: Any = []
         final_attachments: Any = []
-        # 如果前端传入了已加载的 HTML（即用户已经在浏览器中加载过页面），
-        # 则第一个 page_access 步骤优先使用这个 HTML 而不是重新抓取，
-        # 确保全链路测试与用户看到的内容一致
         used_preloaded = False
         
         for step in package.steps:
             try:
-                # 合并：accumulated + last_output，提供更完整的 upstream 上下文
                 merged_upstream: Dict[str, Any] = dict(accumulated)
-                # 上一步的输出优先级更高（覆盖相同字段）
                 if last_output:
                     merged_upstream.update(last_output)
                 
-                # 关键逻辑：如果前端提供了 preloaded_html，
-                # 且当前步骤是 page_access，且步骤 URL 与已加载的页面内容相关，
-                # 则优先使用 preloaded_html 作为 page_html，避免重复抓取
                 effective_page_html = merged_upstream.get("html_preview")
                 if (not used_preloaded and preloaded_html and 
                         step.step_type == "page_access" and 
@@ -1487,9 +1544,14 @@ class StepTester:
                     effective_page_html = preloaded_html
                     used_preloaded = True
                 
+                # 如果有 max_items 限制，且当前步骤是 list_detect，注入限制
+                effective_config = dict(step.config)
+                if max_items is not None and step.step_type == "list_detect":
+                    effective_config["top_n_count"] = max_items
+                
                 r = StepTester.test_step(
                     step.step_type,
-                    step.config,
+                    effective_config,
                     page_html=effective_page_html,
                     upstream_data=merged_upstream
                 )

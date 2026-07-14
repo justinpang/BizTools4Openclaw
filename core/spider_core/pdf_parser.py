@@ -121,19 +121,48 @@ class PdfParser:
                         result.parse_status = "partial"
                 result.text = "\n\n".join([t for t in texts if t])
 
-                # 表格
+                # 表格：跨行的长表格会被每页拆成一个独立表格，
+                # pdfplumber 默认把每页第一行当 headers，导致第 2+ 页首行数据丢失。
+                # 启发式：如果 header 第一列是纯数字/空（像"序号"数据行），则视为数据行
+                first_page_headers: List[str] = []
                 for i, page in enumerate(pdf.pages):
                     try:
                         tables = page.extract_tables()
                         for table in tables or []:
                             if not table:
                                 continue
+                            cleaned_rows: List[List[str]] = []
+                            for row in table:
+                                cleaned_rows.append([str(c).strip() if c else "" for c in row])
+
+                            # 判断第一行是否是真实表头：
+                            #   - 第 1 列是"序号"或中文表头词 → 真实表头
+                            #   - 第 1 列是纯数字 → 数据行（把该行加入 rows）
+                            first_row = cleaned_rows[0]
+                            first_cell = (first_row[0] if first_row else "").strip()
+                            is_real_header = (
+                                first_cell in ("序号", "编号", "No.", "No", "no", "ID", "id")
+                                or any(k in first_cell for k in ("序号", "编号"))
+                            )
+                            if not is_real_header and first_cell.isdigit():
+                                is_real_header = False
+
+                            if is_real_header or i == 0:
+                                headers = first_row
+                                data_rows = cleaned_rows[1:]
+                                if i == 0:
+                                    first_page_headers = list(headers)
+                            else:
+                                # 第 2+ 页：第一行是数据，不是表头 → 整行加入 rows
+                                headers = list(first_page_headers) if first_page_headers else first_row
+                                data_rows = cleaned_rows  # 全部作为数据
+
                             pt = ParsedTable(
                                 page_index=i,
-                                row_count=len(table),
-                                column_count=len(table[0]) if table else 0,
-                                headers=[str(c).strip() if c else "" for c in (table[0] or [])],
-                                rows=[[str(c).strip() if c else "" for c in row] for row in table[1:]],
+                                row_count=len(data_rows),
+                                column_count=len(headers) if headers else (len(data_rows[0]) if data_rows else 0),
+                                headers=list(headers),
+                                rows=[list(r) for r in data_rows],
                                 confidence=0.8,
                             )
                             pt.raw_markdown = _table_to_markdown(pt.headers, pt.rows)

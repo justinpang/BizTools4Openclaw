@@ -476,8 +476,6 @@ def role_can_view_menu(role: str, active_key: str) -> bool:
         # T21: 数据中心菜单
         "data_center_dashboard": VALID_ROLES,
         "data_center_collection": ops_role,
-        "data_center_cleaning": {ROLE_SUPER_ADMIN, ROLE_OPS, ROLE_COMPLIANCE},
-        "data_center_compliance": compliance_role,
         "data_center_grading": {ROLE_SUPER_ADMIN, ROLE_SALES},
         "data_center_outreach": {ROLE_SUPER_ADMIN, ROLE_SALES},
         "data_center_sales": {ROLE_SUPER_ADMIN, ROLE_SALES},

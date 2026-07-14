@@ -35,6 +35,7 @@
       <button class="btn" id="crawl-test-full" onclick="window.crawlTestFull()">🔗 全链路测试</button>
       <span class="divider">|</span>
       <button class="btn" id="crawl-version-btn" onclick="window.crawlShowVersions()">📜 历史版本</button>
+      <button class="btn" id="crawl-plan-config-btn" onclick="window.crawlShowPlanConfig()">⚙ 方案配置</button>
       <button class="btn btn-success" id="crawl-save-plan" onclick="window.crawlSavePlan()">💾 保存方案</button>
     </div>
   </div>
@@ -198,6 +199,54 @@
       </div>
       <div class="step-modal-foot muted">
         每次「保存方案」成功后都会记录版本，保留最近 20 条。
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案配置弹窗：保存中间结果 / 目标域名 / 采集上限等 -->
+  <div class="step-modal-mask" id="plan-config-modal-mask" style="display:none;">
+    <div class="step-modal" style="max-width:640px;">
+      <div class="step-modal-head">
+        <span>⚙ 方案配置</span>
+        <button class="btn btn-sm" id="plan-config-modal-close" onclick="window.crawlClosePlanConfig()">×</button>
+      </div>
+      <div class="step-modal-body">
+        <div style="margin-bottom:12px;">
+          <label style="display:block;margin-bottom:6px;font-weight:bold;">目标域名 / 站点</label>
+          <input type="text" id="crawl-config-target-domain" placeholder="例如：example.gov.cn" style="width:100%;padding:8px;" />
+          <div class="muted" style="font-size:12px;margin-top:4px;">用于识别同站点页面并做全链路漏斗关联，修改后点击保存即生效。</div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block;margin-bottom:6px;font-weight:bold;">采集条目上限（单次运行）</label>
+          <input type="number" id="crawl-config-max-items" min="1" max="10000" placeholder="例如 200" style="width:100%;padding:8px;" />
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block;margin-bottom:6px;font-weight:bold;">运行调度（Cron）</label>
+          <input type="text" id="crawl-config-cron" placeholder="例如：0 0 */2 * *  (每两天一次)" style="width:100%;padding:8px;" />
+          <div class="muted" style="font-size:12px;margin-top:4px;">留空表示仅手动执行。保存后会注册到后台定时任务。</div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block;margin-bottom:6px;font-weight:bold;">保存选项</label>
+          <label style="display:block;margin-bottom:4px;">
+            <input type="checkbox" id="crawl-config-save-middle-result" />
+            <span style="margin-left:4px;">保存步骤级中间结果（输入/输出，便于调试）</span>
+          </label>
+          <label style="display:block;margin-bottom:4px;">
+            <input type="checkbox" id="crawl-config-funnel-visible" />
+            <span style="margin-left:4px;">采集结果纳入全链路漏斗看板（默认开启）</span>
+          </label>
+          <label style="display:block;margin-bottom:4px;">
+            <input type="checkbox" id="crawl-config-enable-clean" />
+            <span style="margin-left:4px;">采集完成后自动进入清洗阶段</span>
+          </label>
+        </div>
+      </div>
+      <div class="step-modal-foot">
+        <button class="btn btn-ghost" onclick="window.crawlClosePlanConfig()">取消</button>
+        <button class="btn btn-success" onclick="window.crawlSavePlanConfig()">保存配置</button>
       </div>
     </div>
   </div>

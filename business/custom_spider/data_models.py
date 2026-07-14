@@ -241,6 +241,87 @@ class CustomSpiderOperationLog(Base, BaseModel):
 
 
 # ============================================================
+# 5. 步骤级执行结果表（T31 新增）
+#    记录每次采集方案执行时每个步骤的输入/输出/状态/耗时
+#    供"执行详情"区块和"方案配置"中"保存中间结果"选项使用
+# ============================================================
+class CustomSpiderRunStep(Base, BaseModel):
+    __tablename__ = "custom_spider_run_steps"
+
+    # 归属：可以关联方案 run 记录，也可以只关联方案本身
+    plan_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("custom_spider_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    run_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("custom_spider_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # 步骤元信息
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    step_type: Mapped[str] = mapped_column(String(64), nullable=False, default="crawl")  # crawl/clean/engine/...
+    step_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    step_description: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
+
+    # 执行状态
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)  # pending/running/success/failed/skipped
+    error_message: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+
+    # 输入与输出（JSON 保存完整中间结果，供查看）
+    input_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    output_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    # 统计信息
+    items_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # 是否保存详细日志（由方案配置 save_middle_result 决定）
+    save_detail: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=False), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=False), nullable=True)
+
+    __table_args__ = (
+        Index("idx_step_plan_run", "plan_id", "run_id", "step_index"),
+        Index("idx_step_status", "plan_id", "status"),
+        Index("idx_step_tenant_created", "tenant_id", "created_at"),
+    )
+
+    def to_public_dict(self, *, include_detail: bool = True) -> dict:
+        result = {
+            "id": self.id,
+            "plan_id": self.plan_id,
+            "run_id": self.run_id,
+            "step_index": self.step_index,
+            "step_type": self.step_type,
+            "step_name": self.step_name,
+            "step_description": self.step_description,
+            "status": self.status,
+            "error_message": self.error_message,
+            "items_in": self.items_in,
+            "items_out": self.items_out,
+            "duration_ms": self.duration_ms,
+            "save_detail": self.save_detail,
+            "started_at": self.started_at.isoformat() if getattr(self.started_at, "isoformat", None) else None,
+            "finished_at": self.finished_at.isoformat() if getattr(self.finished_at, "isoformat", None) else None,
+            "created_at": self.created_at.isoformat() if getattr(self.created_at, "isoformat", None) else str(self.created_at),
+        }
+        if include_detail and self.save_detail:
+            result["input_json"] = self.input_json
+            result["output_json"] = self.output_json
+        else:
+            result["input_json"] = None
+            result["output_json"] = None
+        return result
+
+
+# ============================================================
 # 建表辅助函数
 # ============================================================
 def create_tables() -> bool:
@@ -262,6 +343,7 @@ def create_tables() -> bool:
                 CustomSpiderPlanVersion.__table__,
                 CustomSpiderRun.__table__,
                 CustomSpiderOperationLog.__table__,
+                CustomSpiderRunStep.__table__,
             ],
         )
         insp = inspect(db.engine)
@@ -271,9 +353,10 @@ def create_tables() -> bool:
                 "custom_spider_plan_versions",
                 "custom_spider_runs",
                 "custom_spider_operation_logs",
+                "custom_spider_run_steps",
             ] if insp.has_table(t)
         ]
-        return len(created) == 4
+        return len(created) == 5
     except Exception as exc:
         import traceback
         from infra.logger_setup import get_logger
@@ -287,5 +370,6 @@ __all__ = [
     "CustomSpiderPlanVersion",
     "CustomSpiderRun",
     "CustomSpiderOperationLog",
+    "CustomSpiderRunStep",
     "create_tables",
 ]

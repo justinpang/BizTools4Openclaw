@@ -425,6 +425,30 @@ class RunRepository:
                 .first()
             )
 
+    @staticmethod
+    def delete(run_id: int, *, tenant_id: str = _DEFAULT_TENANT) -> bool:
+        from business.custom_spider.data_models import CustomSpiderRun, CustomSpiderRunStep
+
+        with _session_scope() as session:
+            if session is None:
+                return False
+            try:
+                # 先删除步骤详情
+                session.query(CustomSpiderRunStep).filter(
+                    CustomSpiderRunStep.run_id == run_id,
+                    CustomSpiderRunStep.tenant_id == tenant_id,
+                ).delete(synchronize_session=False)
+                # 再删除运行记录
+                deleted = session.query(CustomSpiderRun).filter(
+                    CustomSpiderRun.id == run_id,
+                    CustomSpiderRun.tenant_id == tenant_id,
+                ).delete(synchronize_session=False)
+                return deleted > 0
+            except Exception as exc:
+                logger = _get_logger()
+                logger.error(f"RunRepository.delete 失败: {exc}")
+                return False
+
 
 # ============================================================
 # LogRepository — 操作日志

@@ -844,6 +844,16 @@
             'style="padding:4px 8px;font-size:11px;margin:2px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;">+ 全文文本</button>';
           // 表格
           if (res.tables && res.tables.length > 0) {
+            var firstHeaders = (res.tables[0] && res.tables[0].headers) || [];
+            if (res.merged_rows && res.merged_rows.length > 0) {
+              for (var mhIdx = 0; mhIdx < firstHeaders.length; mhIdx++) {
+                var mExpr = 'attachments[' + ri + '].merged_rows[row][' + mhIdx + ']';
+                var mDisplayName = firstHeaders[mhIdx] || ("列 " + mhIdx);
+                pickerHtml += '<button type="button" class="btn btn-sm" onclick="window.crawlCopyExpr(\'' + mExpr.replace(/'/g, "\\'") + '\')" ' +
+                  'style="padding:4px 8px;font-size:11px;margin:2px;background:#10b981;color:#fff;border:none;border-radius:4px;cursor:pointer;" title="' + mExpr + '">' +
+                  '+ 全部表 ' + String(mDisplayName).substring(0, 10) + '</button>';
+              }
+            }
             for (var tIdx = 0; tIdx < res.tables.length; tIdx++) {
               var t = res.tables[tIdx];
               var headers = t.headers || [];
@@ -877,7 +887,8 @@
         '<div style="padding:10px;background:#f8fafc;border-radius:6px;font-size:11px;color:#475569;line-height:1.7;">' +
         '<strong>表达式语法：</strong><br/>' +
         '• <code>attachments[0].text</code> — 附件 0 全文文本<br/>' +
-        '• <code>attachments[0].tables[0].rows[row][0]</code> — 表格 0 每行第 0 列<br/>' +
+        '• <code>attachments[0].merged_rows[row][0]</code> — <strong>所有表格合并后每行第 0 列（推荐用于多页 PDF）</strong><br/>' +
+        '• <code>attachments[0].tables[0].rows[row][0]</code> — 表格 0（单页）每行第 0 列<br/>' +
         '• <code>attachments[0].tables[0].rows[1][0]</code> — 表格 0 第 1 行第 0 列（单格取值）<br/>' +
         '• <code>attachments[0].metadata.Author</code> — 附件元数据（作者/标题/日期等）<br/>' +
         '• <code>items[0].title</code> — items 列表第 0 项的 title 字段<br/>' +
@@ -900,13 +911,15 @@
         var out = step.test_result.output;
         var items = out.items || [];
         var atts = out.attachments || [];
+        var previewLimit = out.sample_size || c.preview_count || 50;
         if (items.length > 0 || atts.length > 0) {
           resultHtml = '<div style="margin-top:16px;padding:14px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;">';
-          resultHtml += '<div style="font-weight:bold;color:#065f46;font-size:13px;margin-bottom:10px;">📊 已抓取到 ' + (items.length || 0) + ' 条记录，' + (atts.length || 0) + ' 个附件</div>';
+          resultHtml += '<div style="font-weight:bold;color:#065f46;font-size:13px;margin-bottom:10px;">📊 已抓取到 ' + (items.length || 0) + ' 条记录，' + (atts.length || 0) + ' 个附件（预览上限 ' + previewLimit + ' 条）</div>';
           if (items.length > 0) {
             resultHtml += '<div style="font-size:12px;color:#166534;margin-bottom:6px;">记录内容:</div>';
             resultHtml += '<div style="max-height:300px;overflow:auto;background:white;padding:8px;border:1px solid #d1d5db;border-radius:4px;">';
-            for (var ri = 0; ri < Math.min(items.length, 5); ri++) {
+            var rpShowCount = Math.min(items.length, previewLimit);
+            for (var ri = 0; ri < rpShowCount; ri++) {
               var it = items[ri];
               if (typeof it === "object" && it !== null) {
                 resultHtml += '<div style="margin-bottom:8px;padding:8px;background:#f9fafb;border-radius:4px;font-size:11px;">' +
@@ -1075,6 +1088,23 @@
         state.loadedHtml &&
         (pageAccessUrl === currentUrl || !pageAccessUrl)) {
       upstream.html_preview = state.loadedHtml;
+      // 同时传递 URL 信息，供后续步骤（如附件解析）补全相对 URL
+      if (currentUrl) {
+        upstream.url = currentUrl;
+        upstream.base_href = currentUrl;
+      }
+    }
+    // 从 page_access 步骤的配置中获取 URL（如果上方没有设置）
+    if (!upstream.url && pageAccessUrl) {
+      upstream.url = pageAccessUrl;
+      upstream.base_href = pageAccessUrl;
+    }
+    // 从 upstreamCache.page_access 中获取更完整的信息（preview-render 的结果）
+    if (state.upstreamCache && state.upstreamCache.page_access) {
+      var pa = state.upstreamCache.page_access;
+      if (pa.url && !upstream.url) upstream.url = pa.url;
+      if (pa.base_href && !upstream.base_href) upstream.base_href = pa.base_href;
+      if (pa.final_url && !upstream.final_url) upstream.final_url = pa.final_url;
     }
     // 累积所有前面步骤的 test_result.output
     var currentIdx = state.steps.findIndex(function (s) { return s.step_id === step.step_id; });
@@ -1275,6 +1305,16 @@
         }
       }
     }
+    var rpStep = state.steps.find(function(s) { return s.step_type === "result_preview"; });
+    console.log("[doTestFull] result_preview config:", rpStep ? rpStep.config : null);
+    console.log("[doTestFull] preview_count:", rpStep ? rpStep.config.preview_count : null);
+    
+    var maxItems = rpStep ? rpStep.config.preview_count : null;
+    if (maxItems) {
+      testPayload.max_items = maxItems;
+      console.log("[doTestFull] setting max_items to preview_count:", maxItems);
+    }
+    
     api("/api/admin/crawl/steps/full-test", "POST", testPayload).then(function (data) {
       if (data && data.code === 0) {
         renderFullTestResult(data.data, "全链路测试");
@@ -1680,9 +1720,11 @@
         else if (type === "result_preview") {
           var rpItems = out.items || [];
           var rpAtts = out.attachments || [];
+          var rpLimit = out.sample_size || 50;
           if (rpItems.length > 0 || rpAtts.length > 0) {
-            html += '<div style="font-size:12px;color:#166534;margin-bottom:6px;"><strong>📊 最终预览：' + rpItems.length + ' 条记录 / ' + rpAtts.length + ' 个附件</strong></div>';
-            for (var rpi = 0; rpi < Math.min(rpItems.length, 5); rpi++) {
+            html += '<div style="font-size:12px;color:#166534;margin-bottom:6px;"><strong>📊 最终预览：' + rpItems.length + ' 条记录 / ' + rpAtts.length + ' 个附件（上限 ' + rpLimit + ' 条）</strong></div>';
+            var rpShow = Math.min(rpItems.length, rpLimit);
+            for (var rpi = 0; rpi < rpShow; rpi++) {
               var rpitm = rpItems[rpi];
               html += '<div style="padding:8px 12px;background:white;border-radius:4px;margin-bottom:5px;border:1px solid #bbf7d0;">';
               html += '<div style="font-size:11px;color:#15803d;font-weight:bold;margin-bottom:4px;">📋 记录 ' + (rpi + 1) + '</div>';
@@ -1690,6 +1732,9 @@
               if (rps.length > 500) rps = rps.substring(0, 500) + "\n... (已截断)";
               html += '<pre style="font-size:11px;color:#1e293b;margin:0;white-space:pre-wrap;word-break:break-word;">' + esc(rps) + '</pre>';
               html += '</div>';
+            }
+            if (rpItems.length > rpShow) {
+              html += '<div style="font-size:11px;color:#64748b;text-align:center;padding:4px;">... 还有 ' + (rpItems.length - rpShow) + ' 条记录未展示</div>';
             }
           } else {
             html += '<div style="font-size:12px;color:#475569;"><strong>📊 结果预览配置已验证（上游步骤无数据，或当前步骤无 items 输出）</strong></div>';
@@ -1720,8 +1765,17 @@
     // ============= 最终抓取内容 =============
     function renderFinalRecords(itemsArr) {
       if (!itemsArr || itemsArr.length === 0) return "";
+      // 从 result_preview 步骤获取 preview_count 作为展示上限
+      var finalLimit = 50;
+      for (var si = 0; si < steps.length; si++) {
+        if (steps[si].step_type === "result_preview" && steps[si].output) {
+          finalLimit = steps[si].output.sample_size || finalLimit;
+          break;
+        }
+      }
       var out = "";
-      for (var fi = 0; fi < Math.min(itemsArr.length, 5); fi++) {
+      var showCount = Math.min(itemsArr.length, finalLimit);
+      for (var fi = 0; fi < showCount; fi++) {
         var fitem = itemsArr[fi];
         var fstr = typeof fitem === "string" ? fitem : JSON.stringify(fitem, null, 2);
         if (fstr.length > 500) fstr = fstr.substring(0, 500) + "\n... (已截断)";
@@ -1730,8 +1784,8 @@
         out += '<pre style="font-size:12px;color:#1e293b;margin:0;white-space:pre-wrap;word-break:break-all;">' + esc(fstr) + '</pre>';
         out += '</div>';
       }
-      if (itemsArr.length > 5) {
-        out += '<div style="font-size:12px;color:#64748b;text-align:center;margin-top:6px;">... 还有 ' + (itemsArr.length - 5) + ' 条记录未展示</div>';
+      if (itemsArr.length > showCount) {
+        out += '<div style="font-size:12px;color:#64748b;text-align:center;margin-top:6px;">... 还有 ' + (itemsArr.length - showCount) + ' 条记录未展示</div>';
       }
       return out;
     }
@@ -2073,6 +2127,46 @@
     if (data.tables && data.tables.length > 0) {
       html += '<details open="true" style="margin-bottom:12px;">';
       html += '<summary style="cursor:pointer;padding:6px 8px;background:#ecfdf5;border-radius:4px;font-size:13px;font-weight:600;">📊 表格数据 (' + data.tables.length + ' 个表) — 点击单元格自动生成映射表达式</summary>';
+      
+      var useMergedRows = (data.merged_rows && data.merged_rows.length > 0);
+      var allRows = useMergedRows ? data.merged_rows : [];
+      var firstHeaders = (data.tables[0] && data.tables[0].headers) || [];
+      
+      if (useMergedRows) {
+        html += '<div style="margin:8px 0;padding:8px;background:#dcfce7;border:1px solid #86efac;border-radius:4px;">';
+        html += '<div style="font-size:12px;color:#166534;margin-bottom:6px;">📋 合并表格（所有页面）' +
+          ' (行: ' + allRows.length + ', 列: ' + (firstHeaders.length || (allRows[0] || []).length || 0) + ')' +
+          ' — 点击表头自动插入遍历表达式</div>';
+        html += '<div style="overflow:auto;max-height:300px;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+        if (firstHeaders.length > 0) {
+          html += "<tr>";
+          for (var mhi = 0; mhi < firstHeaders.length; mhi++) {
+            var mHeaderExpr = 'attachments[0].merged_rows[row][' + mhi + ']';
+            html += '<th onclick="window.crawlCopyExpr(\'' + mHeaderExpr.replace(/'/g, "\\'") + '\', this)"' +
+              ' style="padding:4px 6px;border:1px solid #166534;background:#166534;color:#fff;text-align:left;cursor:pointer;"' +
+              ' title="点击复制: ' + mHeaderExpr + '">' +
+              String(firstHeaders[mhi]).replace(/</g, "&lt;") + '<br/>' +
+              '<span style="font-size:10px;font-weight:400;color:#bbf7d0;">[遍历所有行]</span></th>';
+          }
+          html += "</tr>";
+        }
+        for (var mri = 0; mri < Math.min(allRows.length, 5); mri++) {
+          html += "<tr>";
+          for (var mci = 0; mci < (allRows[mri] || []).length; mci++) {
+            var mCellExpr = 'attachments[0].merged_rows[' + mri + '][' + mci + ']';
+            var mBgColor = mri % 2 === 0 ? "#f0fdf4" : "#fff";
+            html += '<td onclick="window.crawlCopyExpr(\'' + mCellExpr.replace(/'/g, "\\'") + '\', this)"' +
+              ' style="padding:4px 6px;border:1px solid #86efac;background:' + mBgColor + ';vertical-align:top;cursor:pointer;transition:background 0.2s;"' +
+              ' onmouseover="this.style.background=\'#fef3c7\';" onmouseout="this.style.background=\'' + mBgColor + '\';"' +
+              ' title="点击复制: ' + mCellExpr + '">' +
+              String(allRows[mri][mci] || "").replace(/</g, "&lt;") +
+              '<br/><span style="font-size:10px;color:#86efac;">[' + mri + ',' + mci + ']</span></td>';
+          }
+          html += "</tr>";
+        }
+        html += "</table></div></div>";
+      }
+      
       for (var ti = 0; ti < data.tables.length; ti++) {
         var tbl = data.tables[ti];
         var rows = tbl.rows || [];

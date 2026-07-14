@@ -1027,6 +1027,23 @@ def get_run_detail_api(run_id: int, request: Request):
         return _error(f"查询失败: {exc}")
 
 
+@router.delete("/crawl/runs/{run_id}")
+def delete_run_api(run_id: int, request: Request):
+    """删除运行记录。"""
+    session = require_permission(request, "btn.spider.edit")
+    try:
+        svc = _get_plan_service()
+        if svc is None:
+            return _error("PlanService 不可用")
+        ok = svc.delete_run(run_id)
+        if ok:
+            return _success({"deleted": True})
+        return _error("删除失败或记录不存在")
+    except Exception as exc:
+        logger.error(f"delete_run_api 失败: {exc}")
+        return _error(f"删除失败: {exc}")
+
+
 # ============================================================
 # 6. 字段模板库
 # ============================================================
@@ -1284,6 +1301,7 @@ async def api_crawl_steps_full_test(request: Request):
         body = {}
     package_dict = body.get("package") or {}
     preloaded_html = body.get("preloaded_html") or None
+    max_items = body.get("max_items")
     if not package_dict.get("steps"):
         return _crawl_steps_err("缺少 package.steps（需提供完整 StepsPackage）")
     try:
@@ -1291,7 +1309,7 @@ async def api_crawl_steps_full_test(request: Request):
         from business.custom_spider.step_service import StepTester
         package = StepsPackage.from_dict(package_dict)
         package.normalize()
-        result = StepTester.run_all(package, preloaded_html=preloaded_html)
+        result = StepTester.run_all(package, preloaded_html=preloaded_html, max_items=max_items)
         return _crawl_steps_ok(result)
     except Exception as exc:  # pragma: no cover
         logger.error(f"full_test 失败: {exc}")

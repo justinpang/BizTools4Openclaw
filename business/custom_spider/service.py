@@ -23,6 +23,90 @@ logger = get_logger("custom_spider.service")
 
 
 # ============================================================
+# 工具函数：保存单个步骤执行结果到 custom_spider_run_steps 表
+# ============================================================
+def _save_step(
+    *, plan_id: int, run_id: int, step_index: int,
+    step_type: str, step_name: str,
+    status: str, step_description: Optional[str] = None,
+    input_json: Optional[dict] = None, output_json: Optional[dict] = None,
+    items_in: int = 0, items_out: int = 0,
+    error_message: Optional[str] = None,
+    save_detail: bool = True, duration_ms: Optional[int] = None,
+) -> int:
+    """保存单个步骤执行结果。
+
+    返回新记录 ID；失败返回 0，不抛出异常。
+    """
+    try:
+        from business.custom_spider.data_models import CustomSpiderRunStep
+        from business.custom_spider.repository import _session_scope
+        from datetime import datetime
+
+        if not save_detail:
+            input_json = None
+            output_json = None
+
+        now = datetime.utcnow()
+
+        with _session_scope() as session:
+            if session is None:
+                logger.warning("_save_step: session is None, skipping")
+                return 0
+
+            existing = None
+            if run_id > 0:
+                existing = (
+                    session.query(CustomSpiderRunStep)
+                    .filter(CustomSpiderRunStep.run_id == run_id)
+                    .filter(CustomSpiderRunStep.step_index == step_index)
+                    .order_by(CustomSpiderRunStep.id.desc())
+                    .first()
+                )
+
+            if existing and status == "running":
+                return int(existing.id or 0)
+
+            if existing and status != "running":
+                existing.status = status
+                existing.error_message = error_message
+                existing.items_in = items_in
+                existing.items_out = items_out
+                existing.duration_ms = duration_ms
+                existing.output_json = output_json
+                existing.step_description = step_description or existing.step_description
+                if status != "running":
+                    existing.finished_at = now
+                session.flush()
+                return int(existing.id)
+
+            step = CustomSpiderRunStep(
+                plan_id=plan_id,
+                run_id=run_id if run_id > 0 else None,
+                step_index=step_index,
+                step_type=step_type,
+                step_name=step_name,
+                status=status,
+                input_json=input_json,
+                output_json=output_json,
+                items_in=items_in,
+                items_out=items_out,
+                duration_ms=duration_ms,
+                save_detail=save_detail,
+                error_message=error_message,
+                step_description=step_description,
+                created_at=now,
+                finished_at=now if status != "running" else None,
+            )
+            session.add(step)
+            session.flush()
+            return int(step.id)
+    except Exception as exc:
+        logger.warning(f"_save_step failed (plan={plan_id}, run={run_id}, step={step_index}): {exc}")
+        return 0
+
+
+# ============================================================
 # 工具函数
 # ============================================================
 def _gen_plan_code(name: str) -> str:
@@ -44,20 +128,110 @@ def _dict_deep_eq(a: dict, b: dict) -> bool:
 
 def _extract_rule_fields(rule_config: dict) -> Dict[str, Any]:
     """从 rule_config 提取关键信息用于版本变更判断。"""
-    key_fields = ["list_rule", "detail_rule", "field_mapping", "pagination"]
+    key_fields = ["list_rule", "detail_rule", "field_mapping", "pagination", "_editor_steps"]
     return {k: rule_config.get(k) for k in key_fields if k in rule_config}
 
 
 def _call_t25_engine(rule_config: dict, *, max_items: Optional[int] = None) -> Dict[str, Any]:
-    """调用 T25 规则采集引擎，返回执行结果。
+    """调用采集引擎，返回执行结果。
+
+    优先使用 :class:`StepService`（基于编辑器步骤），
+    失败时回退到 :class:`RuleCrawlEngine`（基于旧规则配置）。
 
     对依赖缺失/异常容错，保证上层业务能继续。
     """
+    # ---- 优先路径 1：基于 StepsPackage 的新引擎 ----
+    steps_data = (rule_config or {}).get("_steps_package") or (rule_config or {}).get("_editor_steps")
+    if steps_data and isinstance(steps_data, (list, dict)):
+        try:
+            from business.custom_spider.step_service import StepTester
+            from business.custom_spider.step_models import StepsPackage
+
+            if isinstance(steps_data, list):
+                # 兼容旧存储格式：只存了步骤列表
+                pkg = StepsPackage(
+                    plan_name=rule_config.get("name") or "",
+                    spider_type=rule_config.get("spider_type") or "generic",
+                    steps=[],
+                )
+                for s in steps_data:
+                    step = type("StepConfig", (), {
+                        "step_type": s.get("step_type", ""),
+                        "config": s.get("config") or {},
+                        "title": s.get("title") or s.get("step_type", ""),
+                        "step_id": s.get("step_id") or s.get("step_type", ""),
+                        "step_order": s.get("step_order", 0),
+                    })()
+                    pkg.steps.append(step)
+            else:
+                # 标准格式：完整的 StepsPackage dict
+                pkg = StepsPackage.from_dict(steps_data)
+
+            pkg.normalize()
+
+            # 如果调用方传入了 max_items 限制，注入到 list_detect 步骤
+            if max_items is not None:
+                for s in pkg.steps:
+                    if getattr(s, "step_type", None) == "list_detect":
+                        cfg = getattr(s, "config", None) or {}
+                        cfg["max_items_limit"] = max_items
+
+            ss_result = StepTester.run_all(pkg)
+
+            # 从 StepService 输出中提取 items + 步骤诊断信息
+            items = ss_result.get("final_items") or []
+            if not isinstance(items, list):
+                items = [items] if items else []
+
+            # 过滤空记录（所有字段值都为空的 items 不视为有效数据）
+            real_items = []
+            for item in items:
+                if not item:
+                    continue
+                if isinstance(item, dict):
+                    values = [v for v in item.values() if v is not None and str(v).strip()]
+                    if values:
+                        real_items.append(item)
+                else:
+                    real_items.append(item)
+
+            # 收集步骤诊断信息（用于调试和用户反馈）
+            steps_info = ss_result.get("steps") or []
+            failed_steps = [s for s in steps_info if not s.get("success")]
+            step_messages = [f"[{s.get('step_type', s.get('step_id', '?'))}] {s.get('message', '')}"
+                             for s in steps_info[:8]]
+
+            errors_list = []
+            if failed_steps:
+                for fs in failed_steps:
+                    errors_list.append(
+                        f"{fs.get('step_type', fs.get('step_id', 'step'))}: {fs.get('message', '')}"
+                    )
+            if not real_items:
+                errors_list.append("没有可提取的有效数据：可能是页面访问受限（HTTP 403/503），"
+                                   "或列表页结构与选择器不匹配，或附件解析内容与字段映射规则不符")
+
+            return {
+                "success": bool(real_items),
+                "items": real_items,
+                "success_items": len(real_items),
+                "total_items": len(real_items),
+                "field_match_rate": 1.0 if real_items else 0.0,
+                "alerts": [],
+                "errors": errors_list,
+                "total_pages_crawled": 1,
+                "engine": "StepService",
+                "_steps_package": steps_data,
+                "_step_messages": step_messages,
+            }
+        except Exception as exc:
+            logger.warning(f"StepService 路径失败，回退到 RuleCrawlEngine: {exc}")
+
+    # ---- 回退路径 2：旧的 RuleCrawlEngine ----
     try:
         from core.spider_core.rule_engine import RuleCrawlEngine
 
-        # 构造一个最简 CrawlRuleSet
-        rule_set = dict(rule_config)
+        rule_set = dict(rule_config or {})
         if max_items is not None:
             rule_set["max_items"] = max_items
 
@@ -183,10 +357,10 @@ def _write_to_spider_raw(
 
                 entity = SpiderRawData(
                     spider_name=f"custom_spider:{plan_code}",
-                    source_url=url[:1024],
+                    source_url=url,
                     source_id=source_id,
                     raw_payload=dict(item),
-                    raw_text=str(item.get("content") or item.get("title") or "")[:2000],
+                    raw_text=str(item.get("content") or item.get("title") or ""),
                     fetch_status=1,
                     fetch_error=None,
                     source_country=None,
@@ -518,7 +692,7 @@ class PlanService:
                     "items_success": success_count,
                     "items_failed": max(0, total_count - success_count),
                     "field_match_rate": match_rate,
-                    "error_summary": error_msg[:1024] if error_msg else None,
+                    "error_summary": error_msg if error_msg else None,
                     "alerts_json": {"alerts": alerts} if alerts else None,
                     "duration_ms": duration_ms,
                 },
@@ -545,12 +719,26 @@ class PlanService:
     def run_plan_now(
         self, plan_id: int, *, operator: str = "system", max_items: Optional[int] = None
     ) -> Dict[str, Any]:
-        """立即执行一次采集（同步），结果写入 spider_raw_data。"""
+        """立即执行一次采集（同步），结果写入 spider_raw_data。
+
+        执行流程：
+          步骤 1: 调用 T25 引擎 → 抓取/解析
+          步骤 2: 合规预检（敏感信息替换/黑名单过滤）
+          步骤 3: 写入 spider_raw_data（采集阶段）
+          步骤 4: 自动触发清洗 pipeline → 写入 cleaned_opportunity（清洗阶段）
+
+        每个步骤都保存到 CustomSpiderRunStep，供前端"执行详情"查看。
+        """
         from business.custom_spider.repository import PlanRepository, RunRepository, LogRepository
+        from datetime import datetime
 
         plan = PlanRepository.get_by_id(plan_id)
         if plan is None:
             return {"success": False, "error": f"方案 {plan_id} 不存在"}
+
+        # 方案配置：是否保存中间结果（默认开启）
+        plan_config = dict(plan.increment_config or {}) if plan.increment_config else {}
+        save_middle_result = bool(plan_config.get("save_middle_result", True))
 
         rule_config = dict(plan.rule_config or {})
         plan_code = plan.plan_code
@@ -562,15 +750,164 @@ class PlanService:
         run_id = int(run.id) if run else 0
         start_ts = time.monotonic()
 
-        # 调用 T25 引擎
-        engine_result = _call_t25_engine(rule_config, max_items=max_items)
-        items, success_count, total_count, match_rate, error_msg, alerts = _parse_engine_result(engine_result)
+        # ==================== 步骤 1: T25 引擎采集 ====================
+        step1_start = time.monotonic()
+        try:
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=1,
+                step_type="crawl", step_name="引擎采集",
+                step_description="调用 T25 规则引擎，执行列表页抓取与详情解析",
+                status="running", input_json={
+                    "plan_code": plan_code,
+                    "rule_config_keys": list(rule_config.keys())[:10],
+                    "max_items": max_items,
+                    "source_url": source_url,
+                }, save_detail=save_middle_result,
+            )
 
-        # 合规预检
-        items_masked = _compliance_check_items(items)
+            engine_result = _call_t25_engine(rule_config, max_items=max_items)
+            items, success_count, total_count, match_rate, error_msg, alerts = _parse_engine_result(engine_result)
 
-        # 写入 spider_raw_data
-        written = _write_to_spider_raw(items_masked, plan_code=plan_code, source_url=source_url)
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=1,
+                step_type="crawl", step_name="引擎采集",
+                status="success" if not error_msg else "failed",
+                items_in=total_count, items_out=success_count,
+                output_json={
+                    "total_count": total_count,
+                    "success_count": success_count,
+                    "match_rate": float(match_rate) if match_rate else None,
+                    "sample_items": items[:3] if save_middle_result and items else None,
+                }, error_message=error_msg, save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step1_start) * 1000),
+            )
+        except Exception as exc:
+            error_msg = f"步骤1异常: {exc}"
+            items, total_count, success_count, match_rate, alerts = [], 0, 0, None, []
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=1,
+                step_type="crawl", step_name="引擎采集",
+                status="failed", error_message=error_msg, save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step1_start) * 1000),
+            )
+
+        # ==================== 步骤 2: 合规预检 ====================
+        step2_start = time.monotonic()
+        try:
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=2,
+                step_type="compliance", step_name="合规预检",
+                step_description="对采集到的条目做敏感信息过滤与合规检查",
+                status="running", input_json={"raw_items_count": len(items)},
+                save_detail=save_middle_result,
+            )
+
+            items_masked = _compliance_check_items(items)
+
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=2,
+                step_type="compliance", step_name="合规预检",
+                status="success", items_in=len(items), items_out=len(items_masked),
+                output_json={"final_items_count": len(items_masked)},
+                save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step2_start) * 1000),
+            )
+        except Exception as exc:
+            items_masked = items
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=2,
+                step_type="compliance", step_name="合规预检",
+                status="failed", error_message=str(exc), save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step2_start) * 1000),
+            )
+
+        # ==================== 步骤 3: 写入 spider_raw_data（采集阶段） ====================
+        step3_start = time.monotonic()
+        try:
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=3,
+                step_type="storage", step_name="写入采集库",
+                step_description=f"将 {len(items_masked)} 条条目写入 spider_raw_data",
+                status="running", input_json={"items_masked_count": len(items_masked)},
+                save_detail=save_middle_result,
+            )
+
+            written = _write_to_spider_raw(items_masked, plan_code=plan_code, source_url=source_url)
+
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=3,
+                step_type="storage", step_name="写入采集库",
+                status="success", items_in=len(items_masked), items_out=written,
+                output_json={"spider_raw_data_rows": written, "spider_name": f"custom_spider:{plan_code}"},
+                save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step3_start) * 1000),
+            )
+        except Exception as exc:
+            written = 0
+            _save_step(
+                plan_id=plan_id, run_id=run_id, step_index=3,
+                step_type="storage", step_name="写入采集库",
+                status="failed", error_message=str(exc), save_detail=save_middle_result,
+                duration_ms=int((time.monotonic() - step3_start) * 1000),
+            )
+
+        # ==================== 步骤 4: 清洗阶段 → 写入 cleaned_opportunity 供漏斗看板 ====================
+        cleaned_count = 0
+        step4_start = time.monotonic()
+        if written > 0 and not error_msg:
+            try:
+                _save_step(
+                    plan_id=plan_id, run_id=run_id, step_index=4,
+                    step_type="clean", step_name="清洗结构化",
+                    step_description="从 spider_raw_data 读取新数据，进入 data_clean pipeline，写入 cleaned_opportunity",
+                    status="running", input_json={"spider_raw_data_rows": written},
+                    save_detail=save_middle_result,
+                )
+
+                from business.data_clean import run_cleaning
+                from business.data_clean.models import CleanTaskParams
+
+                clean_params = CleanTaskParams(
+                    task_id=f"custom_spider_{plan_id}_{int(time.time())}",
+                    tenant_id="default",
+                    batch_size=written,
+                    spider_names=[f"custom_spider:{plan_code}"],
+                    run_engine=True,
+                    run_storage=True,
+                    run_enterprise_enrich=False,
+                )
+                clean_result = run_cleaning(clean_params)
+                cleaned_count = int(getattr(clean_result, "processed", 0) or 0)
+
+                _save_step(
+                    plan_id=plan_id, run_id=run_id, step_index=4,
+                    step_type="clean", step_name="清洗结构化",
+                    status="success", items_in=written, items_out=cleaned_count,
+                    output_json={
+                        "cleaned_opportunity_rows": cleaned_count,
+                        "task_id": clean_params.task_id,
+                        "funnel_visible": True,  # 标记数据对漏斗看板可见
+                    }, save_detail=save_middle_result,
+                    duration_ms=int((time.monotonic() - step4_start) * 1000),
+                )
+                logger.info(f"清洗阶段完成: {plan.plan_name} → {cleaned_count} 条处理")
+            except Exception as exc:
+                _save_step(
+                    plan_id=plan_id, run_id=run_id, step_index=4,
+                    step_type="clean", step_name="清洗结构化",
+                    status="failed", error_message=str(exc), save_detail=save_middle_result,
+                    duration_ms=int((time.monotonic() - step4_start) * 1000),
+                )
+                logger.warning(f"清洗阶段失败: {exc}")
+        else:
+            # 没有可清洗的数据，跳过步骤4
+            if not error_msg:
+                _save_step(
+                    plan_id=plan_id, run_id=run_id, step_index=4,
+                    step_type="clean", step_name="清洗结构化",
+                    status="skipped", step_description="无新数据，跳过清洗",
+                    save_detail=save_middle_result, duration_ms=0,
+                )
 
         duration_ms = int((time.monotonic() - start_ts) * 1000)
         run_status = "completed" if not error_msg else "failed"
@@ -585,7 +922,7 @@ class PlanService:
                     "items_success": written,
                     "items_failed": max(0, total_count - written),
                     "field_match_rate": match_rate,
-                    "error_summary": error_msg[:1024] if error_msg else None,
+                    "error_summary": error_msg if error_msg else None,
                     "alerts_json": {"alerts": alerts} if alerts else None,
                     "duration_ms": duration_ms,
                 },
@@ -600,7 +937,7 @@ class PlanService:
                     "run_count_success": (plan.run_count_success or 0) + (1 if run_status == "completed" else 0),
                     "items_total": (plan.items_total or 0) + written,
                     "last_run_status": run_status,
-                    "last_run_error": error_msg[:512] if error_msg else None,
+                    "last_run_error": error_msg if error_msg else None,
                 },
             )
         except Exception as exc:
@@ -610,7 +947,7 @@ class PlanService:
             "run", plan_id=plan_id, operator=operator,
             detail=f"立即执行，采集 {written}/{total_count} 条，耗时 {duration_ms}ms",
             success=run_status == "completed",
-            error_message=error_msg[:512] if error_msg else None,
+            error_message=error_msg if error_msg else None,
         )
 
         return {
@@ -619,10 +956,13 @@ class PlanService:
             "run_id": run_id,
             "items_total": total_count,
             "items_written": written,
+            "items_cleaned": cleaned_count,
             "field_match_rate": match_rate,
             "duration_ms": duration_ms,
             "error": error_msg or None,
             "alerts": alerts,
+            "funnel_visible": cleaned_count > 0,  # 标记数据对漏斗看板可见
+            "save_middle_result": save_middle_result,
         }
 
     # ---------- 调度启停 ----------
@@ -771,6 +1111,84 @@ class PlanService:
             return None
         return run.to_public_dict() if hasattr(run, "to_public_dict") else {"id": run_id}
 
+    def delete_run(self, run_id: int) -> bool:
+        from business.custom_spider.repository import RunRepository
+
+        return RunRepository.delete(run_id)
+
+    # ---------- 步骤级执行详情：采集/清洗各步骤的输入/输出/耗时 ----------
+    def get_run_steps(
+        self, plan_id: int, *, run_id: Optional[int] = None,
+        page: int = 1, page_size: int = 50,
+    ) -> Dict[str, Any]:
+        """查询某个方案/运行的步骤级执行详情。
+
+        - 若提供 run_id：只查询这次运行的步骤；
+        - 否则：返回最近 page_size 条步骤（按创建时间倒序）。
+        """
+        try:
+            from business.custom_spider.repository import _session_scope
+            from business.custom_spider.data_models import CustomSpiderRunStep
+
+            with _session_scope() as session:
+                q = session.query(CustomSpiderRunStep).filter(
+                    CustomSpiderRunStep.plan_id == plan_id
+                )
+                if run_id is not None:
+                    q = q.filter(CustomSpiderRunStep.run_id == run_id)
+                q = q.order_by(
+                    CustomSpiderRunStep.run_id.asc(),
+                    CustomSpiderRunStep.step_index.asc(),
+                )
+                total = q.count()
+                rows = q.limit(page_size).offset(max(0, (page - 1) * page_size)).all()
+
+                steps = []
+                for r in rows:
+                    if hasattr(r, "to_public_dict"):
+                        steps.append(r.to_public_dict())
+                    else:
+                        steps.append({
+                            "id": r.id,
+                            "step_index": r.step_index,
+                            "step_name": r.step_name,
+                            "status": r.status,
+                        })
+                return {
+                    "success": True,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "steps": steps,
+                }
+        except Exception as exc:
+            logger.warning(f"get_run_steps failed (plan={plan_id}): {exc}")
+            return {"success": False, "error": str(exc), "total": 0, "steps": []}
+
+    def list_recent_runs_with_steps(
+        self, plan_id: int, *, page: int = 1, page_size: int = 10,
+    ) -> Dict[str, Any]:
+        """返回最近 N 次运行，以及每次运行对应的步骤详情（前端"执行详情"区块使用）。"""
+        try:
+            runs, total = self.list_runs(plan_id, page=page, page_size=page_size)
+            # 对每个 run，附加步骤详情
+            runs_with_steps = []
+            for r in runs:
+                run_id = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+                steps_result = self.get_run_steps(plan_id, run_id=run_id, page=1, page_size=20)
+                r["steps"] = steps_result.get("steps", []) if isinstance(r, dict) else r
+                runs_with_steps.append(r)
+            return {
+                "success": True,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "runs": runs_with_steps,
+            }
+        except Exception as exc:
+            logger.warning(f"list_recent_runs_with_steps failed (plan={plan_id}): {exc}")
+            return {"success": False, "error": str(exc), "total": 0, "runs": []}
+
 
 # ============================================================
 # 调度执行入口 — TaskScheduler 回调函数
@@ -805,4 +1223,5 @@ def execute_scheduled_plan(plan_code: str) -> Dict[str, Any]:
 __all__ = [
     "PlanService",
     "execute_scheduled_plan",
+    "_save_step",
 ]

@@ -141,7 +141,7 @@ def get_funnel(
     compliance_status: str = "",
     session: dict = Depends(require_admin),
 ):
-    """返回 6 阶段漏斗转化数据。"""
+    """返回 4 阶段漏斗转化数据（采集→分级→触达→成交）。"""
     try:
         # --- 阶段 1：采集量 ---
         tasks = _list_from_redis_hash("web_admin:spider_tasks")
@@ -151,9 +151,8 @@ def get_funnel(
             filtered_tasks = [t for t in tasks.values() if str(t.get("channel", "")).lower() == channel.lower()]
             crawled_total = len(filtered_tasks) * 3 if filtered_tasks else 0
 
-        # --- 阶段 2：有效线索 ---
+        # --- 阶段 2：结构化商机（采集即结构化） ---
         leads_total = 0
-        valid_leads = 0
         try:
             from business.data_clean.storage import query_leads  # type: ignore
             result = query_leads(page=1, page_size=1)
@@ -164,21 +163,9 @@ def get_funnel(
         except Exception:
             leads_total = _safe_count("leads:*")
 
-        valid_leads = max(leads_total, 0)
+        structured_count = max(leads_total, 0)
 
-        # --- 阶段 3：合规通过商机 ---
-        compliant_count = 0
-        try:
-            from business.data_clean.storage import query_leads
-            result = query_leads(status="APPROVED", page=1, page_size=1)
-            if isinstance(result, dict):
-                compliant_count = int(result.get("total") or 0)
-            elif hasattr(result, "total"):
-                compliant_count = int(result.total or 0)
-        except Exception:
-            compliant_count = int(valid_leads * 0.85) if valid_leads > 0 else 0
-
-        # --- 阶段 4：客户触达 ---
+        # --- 阶段 3：客户触达 ---
         outreached = 0
         try:
             from business.customer_send.registry import list_runs  # type: ignore
@@ -190,7 +177,7 @@ def get_funnel(
         except Exception:
             outreached = _safe_count("send:run:*") * 5
 
-        # --- 阶段 5：销售跟进 ---
+        # --- 阶段 4：销售跟进 ---
         in_followup = 0
         try:
             from business.sales_task.registry import get_funnel_stats
@@ -200,7 +187,7 @@ def get_funnel(
         except Exception:
             in_followup = int(outreached * 0.3) if outreached > 0 else 0
 
-        # --- 阶段 6：成交 ---
+        # --- 阶段 5：成交 ---
         won = 0
         try:
             from business.sales_task.registry import get_funnel_stats
@@ -212,12 +199,10 @@ def get_funnel(
 
         stages = [
             {"stage_key": "collection", "stage_title": "采集量", "count": crawled_total, "ratio": 100.0 if crawled_total > 0 else 0.0},
-            {"stage_key": "valid_leads", "stage_title": "有效线索", "count": valid_leads,
-             "ratio": round(valid_leads / crawled_total * 100, 1) if crawled_total > 0 else 0.0},
-            {"stage_key": "compliant", "stage_title": "合规商机", "count": compliant_count,
-             "ratio": round(compliant_count / valid_leads * 100, 1) if valid_leads > 0 else 0.0},
+            {"stage_key": "structured", "stage_title": "结构化商机", "count": structured_count,
+             "ratio": round(structured_count / crawled_total * 100, 1) if crawled_total > 0 else 0.0},
             {"stage_key": "outreached", "stage_title": "客户触达", "count": outreached,
-             "ratio": round(outreached / compliant_count * 100, 1) if compliant_count > 0 else 0.0},
+             "ratio": round(outreached / structured_count * 100, 1) if structured_count > 0 else 0.0},
             {"stage_key": "in_followup", "stage_title": "销售跟进", "count": in_followup,
              "ratio": round(in_followup / outreached * 100, 1) if outreached > 0 else 0.0},
             {"stage_key": "won", "stage_title": "成交", "count": won,
@@ -282,8 +267,7 @@ def get_funnel(
             "data": {
                 "stages": [
                     {"stage_key": "collection", "stage_title": "采集量", "count": 0, "ratio": 0.0},
-                    {"stage_key": "valid_leads", "stage_title": "有效线索", "count": 0, "ratio": 0.0},
-                    {"stage_key": "compliant", "stage_title": "合规商机", "count": 0, "ratio": 0.0},
+                    {"stage_key": "structured", "stage_title": "结构化商机", "count": 0, "ratio": 0.0},
                     {"stage_key": "outreached", "stage_title": "客户触达", "count": 0, "ratio": 0.0},
                     {"stage_key": "in_followup", "stage_title": "销售跟进", "count": 0, "ratio": 0.0},
                     {"stage_key": "won", "stage_title": "成交", "count": 0, "ratio": 0.0},
